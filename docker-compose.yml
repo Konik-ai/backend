@@ -59,6 +59,20 @@ services:
         max-size: "10m"
         max-file: "10"
 
+  nginx:
+    image: nginx:alpine
+    network_mode: "host"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        mode: "non-blocking"
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   pgdata:
   cargo-cache:
