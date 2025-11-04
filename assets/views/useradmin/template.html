@@ -331,8 +331,52 @@
         .catch(() => {});
       }
       
+      async function calculateSegmentStartOffset(m3u8Url, targetSegment) {
+        if (targetSegment === null || Number.isNaN(targetSegment)) {
+          return 0;
+        }
+        try {
+          const response = await fetch(m3u8Url, {
+            credentials: 'include',
+            cache: 'no-cache'
+          });
+          if (!response.ok) {
+            console.warn('[calculateSegmentStartOffset] Failed to fetch m3u8:', response.status);
+            return 0;
+          }
+          const manifest = await response.text();
+          const lines = manifest.split(/\r?\n/);
+          let sequence = null;
+          let offset = 0;
+          for (const line of lines) {
+            if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+              const seqVal = parseInt(line.split(':')[1], 10);
+              if (!Number.isNaN(seqVal)) {
+                sequence = seqVal;
+              }
+              continue;
+            }
+            if (line.startsWith('#EXTINF:')) {
+              if (sequence === null) {
+                sequence = 0;
+              }
+              const durationStr = line.substring(8).split(',')[0];
+              const duration = parseFloat(durationStr);
+              if (sequence === targetSegment) {
+                return offset;
+              }
+              offset += Number.isNaN(duration) ? 0 : duration;
+              sequence += 1;
+            }
+          }
+        } catch (err) {
+          console.warn('[calculateSegmentStartOffset] Error parsing m3u8:', err);
+        }
+        return 0;
+      }
+
       let hlsInstance = null;
-      function showVideoModal(url) {
+      async function showVideoModal(url) {
         console.log('[showVideoModal] called with url:', url);
         if (hlsInstance) {
           hlsInstance.destroy();
@@ -344,42 +388,69 @@
         video.removeAttribute('src');
         video.load();
         // Match URLs like /connectdata/<type>/<dongle>/<route>/<segment>/<file>
-        var match = url.match(/\/connectdata\/([^\/]+)\/([^\/]+)\/([^\/]+)\/[^\/]+\/(qcamera\.ts)$/);
+        let parsedPath = url;
+        try {
+          const parsedUrl = new URL(url, window.location.origin);
+          parsedPath = parsedUrl.pathname;
+        } catch (err) {
+          console.warn('[showVideoModal] Unable to parse URL, using raw string:', err);
+        }
+        var match = parsedPath.match(/\/connectdata\/([^\/]+)\/([^\/]+)\/([^\/]+)\/([^\/]+)\/(qcamera\.ts)$/);
         if (match) {
-          var type = match[1]; // e.g., qcam, fcam, dcam, ecam
           var dongle = match[2];
           var route = match[3];
-          var file = match[4];
-          var camType = file.split('.')[0]; // qcamera, fcamera, etc.
-          var ext = file.split('.')[1];
+          var segmentStr = match[4];
+          var file = match[5];
+          var camType = file.split('.')[0]; // qcamera
+          var segmentIndex = parseInt(segmentStr, 10);
           var route_fullname = encodeURIComponent(dongle + '|' + route);
           var m3u8 = `/v1/route/${route_fullname}/${camType}.m3u8`;
-          console.log('[showVideoModal] m3u8 url:', m3u8);
+          var startOffset = await calculateSegmentStartOffset(m3u8, segmentIndex);
+          console.log('[showVideoModal] m3u8 url:', m3u8, 'startOffset:', startOffset);
           if (Hls.isSupported()) {
-            hlsInstance = new Hls();
+            hlsInstance = new Hls({ startPosition: startOffset > 0 ? startOffset : -1 });
             hlsInstance.loadSource(m3u8);
             hlsInstance.attachMedia(video);
             hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
               console.log('[showVideoModal] HLS manifest parsed, playing video');
+              if (startOffset > 0) {
+                try {
+                  video.currentTime = startOffset;
+                } catch (err) {
+                  console.warn('[showVideoModal] Failed to set video.currentTime:', err);
+                }
+              }
               video.play();
             });
             hlsInstance.on(Hls.Events.ERROR, function(event, data) {
               console.error('[showVideoModal] HLS.js error:', data);
             });
+            modal.style.display = 'flex';
+            return;
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = m3u8;
             video.addEventListener('loadedmetadata', function() {
               console.log('[showVideoModal] Native HLS loadedmetadata, playing video');
+              if (startOffset > 0) {
+                try {
+                  video.currentTime = startOffset;
+                } catch (err) {
+                  console.warn('[showVideoModal] Failed to set video.currentTime (native):', err);
+                }
+              }
               video.play();
             }, { once: true });
+            modal.style.display = 'flex';
+            video.load();
+            return;
           } else {
             console.log('[showVideoModal] Fallback to direct video src');
             video.src = url;
             video.load();
             video.play();
+            modal.style.display = 'flex';
+            return;
           }
-          modal.style.display = 'flex';
-          return;
         }
         // fallback for direct video
         console.log('[showVideoModal] No match for m3u8, fallback to direct');
