@@ -7,6 +7,7 @@ use serde_json::Value;
 use axum::{
     extract::{Query, State}, Extension,
 };
+use sysinfo::Users;
 use tokio_util::io::StreamReader;
 extern crate url;
 use std::{collections::HashMap, env, io::Cursor};
@@ -57,6 +58,7 @@ pub struct SegmentsTemplate {
     pub defined: bool,
     pub segments: Vec<SM>,
 }
+
 #[derive(Serialize)]
 pub struct CloudlogsTemplate {
     pub defined: bool,
@@ -71,6 +73,7 @@ pub struct MasterTemplate {
     pub ws_host: String,
     pub onebox: String,
     pub dongle_id: String,
+    pub device_online: Option<bool>,
     pub users: Option<UsersTemplate>,
     pub segments: Option<SegmentsTemplate>,
     pub devices: Option<DevicesTemplate>,
@@ -110,7 +113,6 @@ pub async fn onebox_handler(
     // Check for route or dongle ID
     if let Some(caps) = re.captures(&onebox) {
         dongle_id = caps[1].to_string();
-        // check ownership here
         if let Some(ts) = caps.get(3) {
             timestamp = Some(ts.as_str().to_string());
             canonical_route_name = Some(format!("{}|{}", dongle_id, timestamp.as_ref().unwrap()));
@@ -118,14 +120,12 @@ pub async fn onebox_handler(
     } else {
         dongle_id = "".to_string();
     }
-
-    // ensure ownership of the dongle
-
     let api_endpoint: String = env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set");
     let ws_endpoint: String = env::var("WS_ENDPOINT").expect("WS_ENDPOINT env variable not set");
 
     let mut master_template = MasterTemplate {
         dongle_id: dongle_id.clone(),
+        device_online: if !dongle_id.is_empty() {Some( manager.is_device_online(&dongle_id).await) } else { None },
         onebox: onebox,
         api_host: api_endpoint,
         ws_host: ws_endpoint,
@@ -137,10 +137,10 @@ pub async fn onebox_handler(
             users: UM::find_all_users(&ctx.db).await
         });
     } else {
-        master_template.users = Some(UsersTemplate {
-            defined: true,
-            users: vec![user_model.clone()],
-        });
+        master_template.users = UsersTemplate {
+            defined: false,
+            users: vec![]
+        }.into();
     }
 
     // Parse cloudlogs from the connection manager's cache and add them to the template if available.
@@ -183,7 +183,7 @@ pub async fn onebox_handler(
         }
 
         master_template.segments = segment_models.map(|segments| SegmentsTemplate { 
-            defined: true, 
+            defined: true,
             segments 
         });
     

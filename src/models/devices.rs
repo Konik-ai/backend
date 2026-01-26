@@ -4,6 +4,7 @@ use sea_orm::{ActiveValue, TransactionTrait, QueryOrder};
 use loco_rs::prelude::*;
 pub use super::_entities::devices::{self, ActiveModel, Entity, Model as DM, Column};
 use crate::controllers::v2::DeviceRegistrationParams;
+use sea_orm::{DbBackend, Statement};
 
 
 #[async_trait::async_trait]
@@ -27,6 +28,52 @@ impl ActiveModelBehavior for ActiveModel {
 }
 
 impl DM {
+    /// Aggregate devices per day (UTC) for all time.
+    /// Returns two series:
+    /// - daily registrations by created_at day (count of devices created each day)
+    /// - daily active pings by last_athena_ping day (count of pings each day)
+    pub async fn daily_devices_all_time(
+        db: &DatabaseConnection,
+    ) -> Result<(Vec<(i64, i64)>, Vec<(i64, i64)>), DbErr> {
+        // Registrations per day
+        let sql_reg = r#"
+            SELECT 
+                (EXTRACT(EPOCH FROM created_at)::bigint * 1000 / 86400000) * 86400000 as day_ms,
+                COUNT(*) as cnt
+            FROM devices
+            GROUP BY day_ms
+            ORDER BY day_ms
+        "#;
+        let stmt_reg = Statement::from_string(DbBackend::Postgres, sql_reg.to_string());
+        let reg_rows_raw = db.query_all(stmt_reg).await?;
+        let mut reg_rows: Vec<(i64, i64)> = Vec::with_capacity(reg_rows_raw.len());
+        for row in reg_rows_raw {
+            let day_ms: i64 = row.try_get("", "day_ms")?;
+            let cnt: i64 = row.try_get("", "cnt")?;
+            reg_rows.push((day_ms, cnt));
+        }
+
+        // Active pings per day
+        let sql_active = r#"
+            SELECT 
+                (last_athena_ping / 86400000) * 86400000 as day_ms,
+                COUNT(*) as cnt
+            FROM devices
+            WHERE last_athena_ping > 0
+            GROUP BY day_ms
+            ORDER BY day_ms
+        "#;
+        let stmt_active = Statement::from_string(DbBackend::Postgres, sql_active.to_string());
+        let active_rows_raw = db.query_all(stmt_active).await?;
+        let mut active_rows: Vec<(i64, i64)> = Vec::with_capacity(active_rows_raw.len());
+        for row in active_rows_raw {
+            let day_ms: i64 = row.try_get("", "day_ms")?;
+            let cnt: i64 = row.try_get("", "cnt")?;
+            active_rows.push((day_ms, cnt));
+        }
+
+        Ok((reg_rows, active_rows))
+    }
 
     pub async fn register_device(
         db: &DatabaseConnection,
@@ -165,5 +212,61 @@ impl DM {
             q = q.filter(Column::LastAthenaPing.gte(last_ping_time_after))
         }
         q.count(db).await
+    }
+
+    /// Returns daily device counts since a given unix ms (based on created_at as registration and last_athena_ping as activity)
+    /// - registrations: number of devices with created_at on each day
+    /// - active: number of devices that pinged on each day (last_athena_ping in that day)
+    pub async fn daily_devices_since(
+        db: &DatabaseConnection,
+        start_ms: i64,
+    ) -> Result<(Vec<(String, i64)>, Vec<(String, i64)>), DbErr> {
+        // registrations per day
+        let sql_reg = r#"
+            SELECT 
+                to_char(timezone('UTC', created_at), 'YYYY-MM-DD') AS day,
+                COUNT(*)::bigint AS cnt
+            FROM devices
+            WHERE EXTRACT(EPOCH FROM created_at) * 1000 >= $1
+            GROUP BY day
+            ORDER BY day
+        "#;
+        let stmt_reg = Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql_reg,
+            vec![sea_orm::Value::BigInt(Some(start_ms))],
+        );
+        let reg_rows = db.query_all(stmt_reg).await?;
+        let mut regs: Vec<(String, i64)> = Vec::with_capacity(reg_rows.len());
+        for row in reg_rows {
+            let day: String = row.try_get("", "day")?;
+            let cnt: i64 = row.try_get("", "cnt")?;
+            regs.push((day, cnt));
+        }
+
+        // active pings per day - count devices that had a ping in that day
+        let sql_active = r#"
+            SELECT 
+                to_char(timezone('UTC', to_timestamp(last_athena_ping/1000)), 'YYYY-MM-DD') AS day,
+                COUNT(*)::bigint AS cnt
+            FROM devices
+            WHERE last_athena_ping >= $1
+            GROUP BY day
+            ORDER BY day
+        "#;
+        let stmt_active = Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql_active,
+            vec![sea_orm::Value::BigInt(Some(start_ms))],
+        );
+        let active_rows = db.query_all(stmt_active).await?;
+        let mut actives: Vec<(String, i64)> = Vec::with_capacity(active_rows.len());
+        for row in active_rows {
+            let day: String = row.try_get("", "day")?;
+            let cnt: i64 = row.try_get("", "cnt")?;
+            actives.push((day, cnt));
+        }
+
+        Ok((regs, actives))
     }
 }

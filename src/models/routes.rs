@@ -1,7 +1,9 @@
+use chrono::offset;
 use chrono::prelude::Utc;
 use loco_rs::model::{ModelError, ModelResult};
 use loco_rs::prelude::*;
-use sea_orm::{ActiveValue, DeleteResult, PaginatorTrait, QueryOrder, QuerySelect, SelectColumns, TransactionTrait};
+use sea_orm::{ActiveValue, DeleteResult, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
+use sea_orm::{DbBackend, Statement};
 pub use super::_entities::routes::{self, ActiveModel, Entity, Model as RM, Column};
 
 
@@ -58,6 +60,31 @@ impl RM {
         Ok(self)
         
     }
+        /// Aggregate route miles per day (UTC) for all time.
+        /// Groups by start_time_utc_millis floored to day and sums length.
+        /// Returns Vec of (day_start_ms, total_miles_for_day)
+        pub async fn daily_miles_all_time(
+            db: &DatabaseConnection,
+        ) -> ModelResult<Vec<(i64, f64)>> {
+            let sql = r#"
+                SELECT 
+                    (start_time_utc_millis / 86400000) * 86400000 as day_ms,
+                    SUM(CAST(length AS FLOAT8)) as total_miles
+                FROM routes
+                WHERE length IS NOT NULL AND length > 0
+                GROUP BY (start_time_utc_millis / 86400000)
+                ORDER BY day_ms
+            "#;
+            let stmt = Statement::from_string(DbBackend::Postgres, sql.to_string());
+            let rows = db.query_all(stmt).await?;
+            let mut out: Vec<(i64, f64)> = Vec::with_capacity(rows.len());
+            for row in rows {
+                let day_ms: i64 = row.try_get("", "day_ms")?;
+                let miles: f64 = row.try_get("", "total_miles")?;
+                out.push((day_ms, miles));
+            }
+            Ok(out)
+        }
     /// Finds a route by its canonical route name.
     ///
     /// # Arguments
@@ -111,6 +138,7 @@ impl RM {
         from: Option<i64>,
         to: Option<i64>,
         limit: Option<u64>,
+        offset: Option<u64>,
     ) -> ModelResult<Vec<RM>> {
         let mut query = Entity::find().filter(Column::DeviceDongleId.eq(dongle_id));
 
@@ -119,6 +147,9 @@ impl RM {
         }
         if let Some(to_time) = to {
             query = query.filter(Column::StartTimeUtcMillis.lte(to_time));
+        }
+        if let Some(offset_val) = offset {
+            query = query.offset(offset_val);
         }
         if let Some(limit_val) = limit {
             query = query.limit(limit_val);
@@ -254,7 +285,7 @@ impl RM {
             .await
     }
 
-
+    
     /// Deletes a route by its canonical route name.
     ///
     /// # Arguments

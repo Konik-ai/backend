@@ -133,6 +133,7 @@ enum JsonRpcMessage {
 pub struct DeviceConnection {
     pub connection_id: String,
     pub sender: SplitSink<WebSocket, Message>,
+    pub command_queue: Vec<JsonRpcRequest>,
 }
 
 pub struct ConnectionManager {
@@ -149,6 +150,10 @@ impl ConnectionManager {
             clients: Mutex::new(HashMap::new()),
             cloudlog_cache: RwLock::new(HashMap::new()),
         })
+    }
+    pub async fn is_device_online(&self, dongle_id: &str) -> bool {
+        let devices = self.devices.lock().await;
+        devices.contains_key(dongle_id)
     }
 }
 
@@ -279,6 +284,7 @@ async fn handle_socket(
         devices.insert(endpoint_dongle_id.clone(), DeviceConnection {
             connection_id: connection_id.clone(),
             sender,
+            command_queue: Vec::new(),
         });
     }
     

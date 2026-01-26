@@ -406,76 +406,110 @@
         const cumulativeMilesData = [{% for point in miles_over_time %}{{ point.miles }}{% if not loop.last %}, {% endif %}{% endfor %}];
         const dailyMilesData = [{% for point in daily_miles_over_time %}{{ point.miles }}{% if not loop.last %}, {% endif %}{% endfor %}];
 
-        const ctx = document.getElementById('milesChart').getContext('2d');
-        const milesChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: milesLabels,
-                datasets: [{
-                    label: 'Total Miles',
-                    data: cumulativeMilesData,
-                    borderColor: 'rgb(75, 192, 192)',
-                    tension: 0.1
-                }]
-            },
-            options: {
-                scales: {
-                    y: {
-                        beginAtZero: true
+        console.log('Miles Labels:', milesLabels);
+        console.log('Cumulative Miles Data:', cumulativeMilesData);
+        console.log('Daily Miles Data:', dailyMilesData);
+
+        const ctx = document.getElementById('milesChart');
+        if (ctx) {
+            const milesChart = new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: milesLabels,
+                    datasets: [{
+                        label: 'Total Miles',
+                        data: cumulativeMilesData,
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        tension: 0.3,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Miles'
+                            }
+                        }
                     }
                 }
+            });
+
+            // Toggle for miles chart
+            const milesToggle = document.getElementById('miles-toggle');
+            if (milesToggle) {
+                milesToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        milesChart.data.datasets[0].data = dailyMilesData;
+                        milesChart.data.datasets[0].label = 'Daily Miles';
+                    } else {
+                        milesChart.data.datasets[0].data = cumulativeMilesData;
+                        milesChart.data.datasets[0].label = 'Total Miles';
+                    }
+                    milesChart.update();
+                });
             }
-        });
+        }
 
         // Devices over time chart
         const devicesLabels = [{% for point in devices_over_time %}'{{ point.date }}'{% if not loop.last %}, {% endif %}{% endfor %}];
         const cumulativeDevicesData = [{% for point in devices_over_time %}{{ point.miles }}{% if not loop.last %}, {% endif %}{% endfor %}];
         const dailyDevicesData = [{% for point in daily_devices_over_time %}{{ point.miles }}{% if not loop.last %}, {% endif %}{% endfor %}];
 
-        const devicesCtx = document.getElementById('devicesChart').getContext('2d');
-        const devicesChart = new Chart(devicesCtx, {
-            type: 'line',
-            data: {
-                labels: devicesLabels,
-                datasets: [{
-                    label: 'Total Devices',
-                    data: cumulativeDevicesData,
-                    borderColor: 'rgb(255, 99, 132)',
-                    tension: 0.1
-                }]
-            },
-            options: {
-                scales: {
-                    y: {
-                        beginAtZero: true
+        console.log('Devices Labels:', devicesLabels);
+        console.log('Cumulative Devices Data:', cumulativeDevicesData);
+        console.log('Daily Devices Data:', dailyDevicesData);
+
+        const devicesCtx = document.getElementById('devicesChart');
+        if (devicesCtx) {
+            const devicesChart = new Chart(devicesCtx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: devicesLabels,
+                    datasets: [{
+                        label: 'Total Devices',
+                        data: cumulativeDevicesData,
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        tension: 0.3,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Device Count'
+                            }
+                        }
                     }
                 }
-            }
-        });
+            });
 
-        // Toggle for miles chart
-        document.getElementById('miles-toggle').addEventListener('change', function() {
-            if (this.checked) {
-                milesChart.data.datasets[0].data = dailyMilesData;
-                milesChart.data.datasets[0].label = 'Daily Miles';
-            } else {
-                milesChart.data.datasets[0].data = cumulativeMilesData;
-                milesChart.data.datasets[0].label = 'Total Miles';
+            // Toggle for devices chart
+            const devicesToggle = document.getElementById('devices-toggle');
+            if (devicesToggle) {
+                devicesToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        devicesChart.data.datasets[0].data = dailyDevicesData;
+                        devicesChart.data.datasets[0].label = 'Daily Devices';
+                    } else {
+                        devicesChart.data.datasets[0].data = cumulativeDevicesData;
+                        devicesChart.data.datasets[0].label = 'Total Devices';
+                    }
+                    devicesChart.update();
+                });
             }
-            milesChart.update();
-        });
-
-        // Toggle for devices chart
-        document.getElementById('devices-toggle').addEventListener('change', function() {
-            if (this.checked) {
-                devicesChart.data.datasets[0].data = dailyDevicesData;
-                devicesChart.data.datasets[0].label = 'Daily Devices';
-            } else {
-                devicesChart.data.datasets[0].data = cumulativeDevicesData;
-                devicesChart.data.datasets[0].label = 'Total Devices';
-            }
-            devicesChart.update();
-        });
+        }
     </script>
 </body>
 </html>

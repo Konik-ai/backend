@@ -115,7 +115,8 @@ where
         let identity = &token_data.claims.identity; // this is the dongle_id if its a device or identity if user
         let error_message = format!("identity: {} not registered", identity);
         match alg {
-            Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512 => { // device can use these algos             
+            Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512 |
+            Algorithm::ES256 | Algorithm::ES384 => { // device can use these algos             
                 let device = DM::find_device(&ctx.db, identity)
                     .await
                     .map_err(|_| handle_unauth(parts, &error_message))?; // return here if not registered
@@ -148,7 +149,7 @@ where
                     device_model: device_model.ok(),
                 });
             }
-            _ => return Err(handle_unauth(parts, "Must use RS or HS jwt algorithm"))
+            _ => return Err(handle_unauth(parts, "Must use RS or HS or ES jwt algorithm"))
         }
     }
 }

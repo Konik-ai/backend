@@ -12,7 +12,8 @@ from helpers import *
 def files_from_device(db, dongle_id, filters):
     upload_files = []
     upload_queue = get_upload_queue(dongle_id)
-    if not isinstance(upload_queue, list) or upload_queue:  # don't request more if there are uploads queued
+    if not isinstance(upload_queue, list) or len(upload_queue) > 0:  # don't request more if there are uploads queued
+        print(f"{dongle_id} is uploading files")
         return []
     print(f"Device {dongle_id} is online")
     print("getting log dir")
@@ -47,6 +48,7 @@ def files_from_device(db, dongle_id, filters):
 
 class File:
     def __init__(self, path):
+        print(f"Processing file path: {path}")
         self.path = path
         self.type = path.split('/')[1].split('.')[0]  # Extract the file type from the path
         self.id = path.split('/')[0]  # Extract the id from the path
@@ -110,10 +112,15 @@ def main():
         uploads_dict = []
         for device in devices:
             dongle_id = device["dongle_id"]
+                    
             if device["online"] and device["firehose"]:
                 log_dir = files_from_device(db, dongle_id, args.filters)
                 filtered_files = list(filter(lambda file: any(sub in file for sub in args.filters), log_dir))
-                filtered_files = sort_upload_files(filtered_files)
+                try:
+                    filtered_files = sort_upload_files(filtered_files)
+                except Exception as e:
+                    print(f"Error sorting files for device {dongle_id}: {e}")
+                    continue
                 uploads_dict.append({"dongle_id": dongle_id, "files": filtered_files})
         for upload_dict in uploads_dict:
             dongle_id = upload_dict['dongle_id']

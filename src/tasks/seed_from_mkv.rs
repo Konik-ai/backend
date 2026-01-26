@@ -5,6 +5,7 @@ use time::serde::timestamp; use std::env::vars;
 // For the `shuffle` method
 use std::thread;
 use std::time::Duration;
+use tokio::time::sleep;
 use reqwest::Client;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, from_str};
@@ -33,6 +34,11 @@ impl Task for SeedFromMkv {
             .ok();
         
         let client = Client::new();
+        let throttle_ms = vars
+            .cli_arg("throttle_ms")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(25);
 
         // Hex characters for prefix chunking
         let hex_chars = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
@@ -153,6 +159,9 @@ impl Task for SeedFromMkv {
                             tracing::error!("Failed to queue worker: {}", e);
                             return Ok(());
                         }
+                    }
+                    if throttle_ms > 0 {
+                        sleep(Duration::from_millis(throttle_ms)).await;
                     }
                 },
                 None => {

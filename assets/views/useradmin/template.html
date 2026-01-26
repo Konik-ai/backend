@@ -1022,7 +1022,7 @@
     </div>
     {% if users.defined is defined %}
     <details>
-      <summary>Registered Users</summary>
+      <summary>Users</summary>
       <hr>
       <table id="table_users">
         <tbody>
@@ -1103,9 +1103,9 @@
     <details>
       <summary>Segments</summary>
       <hr>
-      <b>dongle id:</b> <a href="/?onebox={{ dongle_id }}">{{ dongle_id }}</a><br>
+      <b>dongle id:</b> <a href="/?onebox={{ dongle_id }}">{{ dongle_id }}</a> <b> status: {% if device_online %}<span class="green-text">Online</span>{% else %}<span class="red-text">Offline</span>{% endif %}</b><br>
       <hr>
-      <button id="uploadAllButton" onclick="uploadAllFiles()">Upload All Files</button>
+  <button id="uploadAllButton" onclick="uploadAllFiles()" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All Files</button>
       <b>segments:</b><br>
       <div class="scrollable-container">
         <table id="data-table">
@@ -1113,12 +1113,12 @@
             <tr>
               <th>#</th>
               <th>Parsed Data</th>
-              <th>qlog <button onclick="uploadAllOfType('qlog')">Upload All</button></th>
-              <th>qcam <button onclick="uploadAllOfType('qcam')">Upload All</button></th>
-              <th>rlog <button onclick="uploadAllOfType('rlog')">Upload All</button></th>
-              <th>fcam <button onclick="uploadAllOfType('fcam')">Upload All</button></th>
-              <th>dcam <button onclick="uploadAllOfType('dcam')">Upload All</button></th>
-              <th>ecam <button onclick="uploadAllOfType('ecam')">Upload All</button></th>
+              <th>qlog <button onclick="uploadAllOfType('qlog')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All</button></th>
+              <th>qcam <button onclick="uploadAllOfType('qcam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All</button></th>
+              <th>rlog <button onclick="uploadAllOfType('rlog')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All</button></th>
+              <th>fcam <button onclick="uploadAllOfType('fcam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All</button></th>
+              <th>dcam <button onclick="uploadAllOfType('dcam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All</button></th>
+              <th>ecam <button onclick="uploadAllOfType('ecam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All</button></th>
             </tr>
           </thead>
         {% for segment in segments.segments %}
@@ -1126,12 +1126,12 @@
           <tr>
             <td>{{ segment.number }}</td>
             <td>{% if segment.qlog_url != "" %}<a href="/qlog?url={{ segment.ulog_url }}&event=errorLogMessage">{{ segment.canonical_name }}</a>{% endif %}</td>
-            <td>{% if segment.qlog_url != "" %}<a href="{{ segment.qlog_url }}">qlog</a>{% else %}<div id="progressContainer_{{ segment.number }}_qlog" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_qlog" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_rlog" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'qlog', '{{ segment.number }}', 'qlog')">Upload</button>{% endif %}</td>
-            <td>{% if segment.qcam_url != "" %}<a href="{{ segment.qcam_url }}">camera.ts</a>{% else %}<div id="progressContainer_{{ segment.number }}_qcam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_qcam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_qcam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'qcamera.ts', '{{ segment.number }}', 'qcam')">Upload</button>{% endif %}</td>
-            <td>{% if segment.rlog_url != "" %}<a href="{{ segment.rlog_url }}">rlog</a>{% else %}<div id="progressContainer_{{ segment.number }}_rlog" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_rlog" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_rlog" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'rlog', '{{ segment.number }}', 'rlog')">Upload</button>{% endif %}</td>
-            <td>{% if segment.fcam_url != "" %}<a href="{{ segment.fcam_url }}">fcamera.hevc</a>{% else %}<div id="progressContainer_{{ segment.number }}_fcam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_fcam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_fcam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'fcamera.hevc', '{{ segment.number }}', 'fcam')">Upload</button>{% endif %}</td>
-            <td>{% if segment.dcam_url != "" %}<a href="{{ segment.dcam_url }}">dcamera.hevc</a>{% else %}<div id="progressContainer_{{ segment.number }}_dcam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_dcam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_dcam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'dcamera.hevc', '{{ segment.number }}', 'dcam')">Upload</button>{% endif %}</td>
-            <td>{% if segment.ecam_url != "" %}<a href="{{ segment.ecam_url }}">ecamera.hevc</a>{% else %}<div id="progressContainer_{{ segment.number }}_ecam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_ecam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_ecam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'ecamera.hevc', '{{ segment.number }}', 'ecam')">Upload</button>{% endif %}</td>
+            <td>{% if segment.qlog_url != "" %}<a href="{{ segment.qlog_url }}">qlog</a>{% else %}<div id="progressContainer_{{ segment.number }}_qlog" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_qlog" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_rlog" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'qlog', '{{ segment.number }}', 'qlog')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload</button>{% endif %}</td>
+            <td>{% if segment.qcam_url != "" %}<a href="{{ segment.qcam_url }}">camera.ts</a>{% else %}<div id="progressContainer_{{ segment.number }}_qcam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_qcam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_qcam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'qcamera.ts', '{{ segment.number }}', 'qcam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload</button>{% endif %}</td>
+            <td>{% if segment.rlog_url != "" %}<a href="{{ segment.rlog_url }}">rlog</a>{% else %}<div id="progressContainer_{{ segment.number }}_rlog" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_rlog" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_rlog" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'rlog', '{{ segment.number }}', 'rlog')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload</button>{% endif %}</td>
+            <td>{% if segment.fcam_url != "" %}<a href="{{ segment.fcam_url }}">fcamera.hevc</a>{% else %}<div id="progressContainer_{{ segment.number }}_fcam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_fcam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_fcam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'fcamera.hevc', '{{ segment.number }}', 'fcam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload</button>{% endif %}</td>
+            <td>{% if segment.dcam_url != "" %}<a href="{{ segment.dcam_url }}">dcamera.hevc</a>{% else %}<div id="progressContainer_{{ segment.number }}_dcam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_dcam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_dcam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'dcamera.hevc', '{{ segment.number }}', 'dcam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload</button>{% endif %}</td>
+            <td>{% if segment.ecam_url != "" %}<a href="{{ segment.ecam_url }}">ecamera.hevc</a>{% else %}<div id="progressContainer_{{ segment.number }}_ecam" style="display:none;"><progress id="uploadProgress_{{ segment.number }}_ecam" value="0" max="100"></progress></div><button id="uploadButton_{{ segment.number }}_ecam" onclick="uploadFile('{{ dongle_id }}', '{{ segment.number }}', '{{ segment.canonical_route_name }}', 'ecamera.hevc', '{{ segment.number }}', 'ecam')" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload</button>{% endif %}</td>
           </tr>
         </tbody>
         {% endfor %}

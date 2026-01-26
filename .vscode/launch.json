@@ -1,5 +1,19 @@
 {
   "version": "0.2.0",
+  "inputs": [
+    {
+      "id": "dongle_id",
+      "type": "promptString",
+      "description": "Enter dongle ID",
+      "default": ""
+    },
+    {
+      "id": "timestamp",
+      "type": "promptString",
+      "description": "Enter timestamp",
+      "default": ""
+    }
+  ],
   "configurations": [
     {
       "name": "Python Debugger: Current File",
@@ -70,6 +84,9 @@
         
         "task",
         "seed_from_mkv",
+        "-e", "useradmin_trace",
+        "dongle_id:${input:dongle_id}",
+        "timestamp:${input:timestamp}",
 
       ],
       "cwd": "${workspaceFolder}",

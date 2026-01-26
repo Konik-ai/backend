@@ -36,7 +36,10 @@ pub async fn upload_bootlogs(
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(data) => buffer.extend_from_slice(&data),
-            Err(_) => return Ok((StatusCode::BAD_REQUEST, "Error reading request body")),
+            Err(e) => {
+                tracing::warn!("Error reading request body: {}", e);
+                return Ok((StatusCode::BAD_REQUEST, "Error reading request body"));
+            }
         }
     }
     let data = buffer.freeze();
@@ -112,7 +115,10 @@ pub async fn upload_crash(
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(data) => buffer.extend_from_slice(&data),
-            Err(_) => return Ok((StatusCode::BAD_REQUEST, "Error reading request body")),
+            Err(e) => {
+                tracing::warn!("Error reading request body: {}", e);
+                return Ok((StatusCode::BAD_REQUEST, "Error reading request body"));
+            }
         }
     }
     let data = buffer.freeze();

@@ -549,6 +549,10 @@ async fn parse_qlog(
     let mut events: Vec<serde_json::Value> = Vec::new();
     let mut qlog_result = QLogResult{..Default::default()};
 
+    // Track state to collapse consecutive identical events
+    let mut last_state: Option<(bool, i32)> = None; // (enabled, alertStatus)
+    let mut last_event_idx: Option<usize> = None; // Index of the last emitted event
+
     while let Ok(message_reader) = capnp::serialize::read_message(&mut cursor, ReaderOptions::default()) {
         let event = match message_reader.get_root::<LogEvent::Reader>() {
             Ok(event) => event,
@@ -668,54 +672,69 @@ async fn parse_qlog(
                         writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::OnroadEvents(onroad_event) => {
-                        if let Ok(onroad_event) = onroad_event {
-                            if onroad_event.len() == 0 {
-                                continue;
-                            }
-                            for car_event in onroad_event.iter() {
-                                let mut state = "disabled";
-                                let mut enabled: bool = false;
-                                let mut alert_status = 0;
-                                let mut _name = car_event.get_name().ok();
-                                let _no_entry = car_event.get_no_entry();
-                                let warning = car_event.get_warning();
-                                let _user_disable = car_event.get_user_disable();
-                                let soft_disable = car_event.get_soft_disable();
-                                let immediate_disable = car_event.get_immediate_disable();
-                                let _pre_enable = car_event.get_pre_enable();
-                                let _permanent = car_event.get_permanent();
-                                let overridden = car_event.get_override_lateral() || car_event.get_override_longitudinal();
-                                if car_event.get_enable() || car_event.get_pre_enable() {
-                                    state = "enabled";
-                                    enabled = true;
-                                }
-                                if overridden {
-                                    state = "overriding";
-                                    enabled = true
-                                }
-                                if car_event.get_user_disable() || car_event.get_soft_disable() || car_event.get_immediate_disable() {
-                                    state = "disabled";
-                                }
-                                if immediate_disable {
-                                    alert_status = 2;
-                                }
-                                if soft_disable || warning {
-                                    alert_status = 1;
-                                }
+                        writeln!(unlog_data, "{:#?}", event).ok();
+                    }
+                    LogEvent::SelfdriveState(selfdrive_state) => {
+                        if let Ok(selfdrive_state) = selfdrive_state {
+                            // Track the engagement state and alert status from SelfdriveState
+                            let new_enabled = selfdrive_state.get_enabled();
+                            let engageable = selfdrive_state.get_engageable();
+                            
+                            // Extract alert status
+                            let mut alert_status = match selfdrive_state.get_alert_status().ok() {
+                                Some(log_capnp::selfdrive_state::AlertStatus::Normal) => 0,
+                                Some(log_capnp::selfdrive_state::AlertStatus::UserPrompt) => 1,
+                                Some(log_capnp::selfdrive_state::AlertStatus::Critical) => 2,
+                                _ => 0,
+                            };
 
-                                if let Some(onroad_mono_time) = onroad_mono_time{
-                                    events.push(
-                                        serde_json::json!({
-                                            "type": "state",
-                                            "time": log_mono_time,
-                                            "route_offset_millis": (log_mono_time - onroad_mono_time) / 1000000,
-                                            "data": {
-                                                "state": state,
-                                                "enabled": enabled,
-                                                "alertStatus": alert_status,
+
+                            // If there's an alert (alertSize is not None), set to critical
+                            if let Ok(alert_size) = selfdrive_state.get_alert_size() {
+                                if alert_size != log_capnp::selfdrive_state::AlertSize::None && !engageable {
+                                    alert_status = alert_status.max(1);
+                                }
+                            }
+
+                            let new_state = (new_enabled, alert_status);
+
+                            if let Some(onroad_mono_time) = onroad_mono_time {
+                                let route_offset_millis = (log_mono_time - onroad_mono_time) / 1000000;
+
+                                // Check if state changed or if this is the first event
+                                if last_state.is_none() || last_state.as_ref() != Some(&new_state) {
+                                    // If we have a previous event, update its end_route_offset_millis
+                                    if let Some(idx) = last_event_idx {
+                                        if let Some(event) = events.get_mut(idx) {
+                                            if let Some(data) = event.get_mut("data") {
+                                                data["end_route_offset_millis"] = serde_json::json!(route_offset_millis);
                                             }
-                                        })
-                                    )
+                                        }
+                                    }
+
+                                    // Emit new engagement state
+                                    events.push(serde_json::json!({
+                                        "type": "state",
+                                        "time": log_mono_time,
+                                        "route_offset_millis": route_offset_millis,
+                                        "data": {
+                                            "state": if new_enabled { "enabled" } else { "disabled" },
+                                            "enabled": new_enabled,
+                                            "alertStatus": alert_status,
+                                        }
+                                    }));
+
+                                    last_state = Some(new_state);
+                                    last_event_idx = Some(events.len() - 1);
+                                } else {
+                                    // State didn't change, just update the end time of current event
+                                    if let Some(idx) = last_event_idx {
+                                        if let Some(event) = events.get_mut(idx) {
+                                            if let Some(data) = event.get_mut("data") {
+                                                data["end_route_offset_millis"] = serde_json::json!(route_offset_millis);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

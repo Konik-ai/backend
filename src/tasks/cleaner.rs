@@ -57,7 +57,8 @@ impl Task for Cleaner {
                     &device.dongle_id,
                     None,
                     Some(older_than.and_utc().timestamp_millis()),
-                    Some(10000)
+                    Some(10000),
+                    None,
                 ).await?;
 
                 // check the length of each route

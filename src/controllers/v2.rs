@@ -11,7 +11,7 @@ use axum::{
 use loco_rs::prelude::*;
 use serde::{Serialize, Deserialize};
 use jsonwebtoken::{
-    decode, Algorithm, DecodingKey, TokenData, Validation,
+    decode, decode_header, Algorithm, DecodingKey, TokenData, Validation,
 };
 
 use crate::models::{
@@ -76,17 +76,22 @@ struct PilotAuthResponse {
 }
 
 async fn decode_register_token(params: &DeviceRegistrationParams) -> Option<TokenData<DeviceClaims>> {
-    //let mut validate = Validation::new(Algorithm::RS256);
-    //validate.leeway = 0;
-    let claims = decode::<DeviceClaims>(
-        &params.register_token,
-        &DecodingKey::from_rsa_pem(&params.public_key.as_bytes()).unwrap(),
-        &Validation::new(Algorithm::RS256),
-    );
-    match claims {
-        Ok(claims) => Some(claims),
-        Err(_e) => None,
-    }
+    // Detect alg from header; default to RS256 for legacy behavior
+    let alg = decode_header(&params.register_token).ok().map(|h| h.alg).unwrap_or(Algorithm::RS256);
+
+    let (validation, key) = match alg {
+        Algorithm::RS256 => {
+            let key = DecodingKey::from_rsa_pem(params.public_key.as_bytes()).ok()?;
+            (Validation::new(Algorithm::RS256), key)
+        }
+        Algorithm::ES256 => {
+            let key = DecodingKey::from_ec_pem(params.public_key.as_bytes()).ok()?;
+            (Validation::new(Algorithm::ES256), key)
+        }
+        _ => return None, // unsupported alg
+    };
+
+    decode::<DeviceClaims>(&params.register_token, &key, &validation).ok()
 }
 
 pub async fn pilotauth(
@@ -144,11 +149,14 @@ async fn decode_pair_token(ctx: &AppContext, jwt: &str) -> Result<DevicePairClai
         Err(_e) => return Ok(token_data.claims),
     };
 
-    let claims = decode::<DevicePairClaims>(
-        jwt,
-        &DecodingKey::from_rsa_pem(&device.public_key.as_bytes()).unwrap(),
-        &Validation::new(token_data.header.alg),
-    );
+    let alg = token_data.header.alg;
+    let key = match alg {
+        Algorithm::RS256 => DecodingKey::from_rsa_pem(device.public_key.as_bytes()),
+        Algorithm::ES256 => DecodingKey::from_ec_pem(device.public_key.as_bytes()),
+        _ => return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into()),
+    }.map_err(|e| e)?;
+
+    let claims = decode::<DevicePairClaims>(jwt, &key, &Validation::new(alg));
     match claims {
         Ok(token_data) => Ok(token_data.claims),
         Err(e) => Err(e),

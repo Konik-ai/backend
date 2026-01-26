@@ -90,9 +90,9 @@ def get_upload_queue(dongle_id):
         return None
     if response.status_code == 200:
         json_response = response.json()
-        if isinstance(json_response.get('result'), list):
-            print(f"{dongle_id} is uploading files")
-            return json_response.get('result')
+        r = json_response.get('result')
+        if isinstance(r, list):
+            return r
         else:
             print("Error")
     else:
@@ -114,8 +114,8 @@ def get_upload_urls(dongle_id, paths: list):
             paths.insert(i + 1, path + ".zst")
             i += 2  # then skip over both new entries
             continue
-        if 'qlog' in path and not path.endswith(".bz2"):
-            paths[i] = path + ".bz2"
+        if 'qlog' in path and not path.endswith(".zst"):
+            paths[i] = path + ".zst"
         if 'qcam' in path and not path.endswith(".ts"):
             paths[i] = path + ".ts"
         if any(cam in path for cam in ['fcam', 'dcam', 'ecam']):
@@ -128,7 +128,8 @@ def get_upload_urls(dongle_id, paths: list):
     }
     headers = {
         "Authorization": f"JWT {authorization}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "FetchScript"
     }
     response = requests.post(url, headers=headers, json=payload)
     if response.status_code == 200:
@@ -136,14 +137,15 @@ def get_upload_urls(dongle_id, paths: list):
 
         return upload_urls
     else:
-        print()
+        print(f"Failed to send request: {response.status_code}")
         return {"error": response.status_code, "message": response.text}
 
 
 def request_upload(dongle_id, paths, urls):
     headers = {
         "Authorization": f"JWT {authorization}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "FetchScript"
     }
 
     # Collect all files data
@@ -153,7 +155,8 @@ def request_upload(dongle_id, paths, urls):
             "fn": paths[i],
             "url": url['url'],
             "headers": {
-                "x-ms-blob-type": "BlockBlob"
+                "x-ms-blob-type": "BlockBlob",
+                "User-Agent": "FetchScript"
             }
         })
 

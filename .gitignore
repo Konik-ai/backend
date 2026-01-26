@@ -42,3 +42,11 @@ benchmark_drives.sh
 Cargo.lock
 connect_development_backup.sql
 users_devices_data.sql
+nginx_logs
+time_test.py
+.gitignore
+test_reg.py
+streaming_client.py
+storage_report.txt
+src/controllers/create_keys.py
+src/controllers/test_pilotauth.py

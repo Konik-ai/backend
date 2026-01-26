@@ -12,3 +12,4 @@ target/
 **/*.zip
 tmp/
 .cargo/
+backup/

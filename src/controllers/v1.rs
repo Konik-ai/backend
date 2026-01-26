@@ -312,7 +312,7 @@ async fn get_upload_url(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get secrete"))?;
     let token = jwt::JWT::new(&jwt_secret.secret).generate_token(
         &(3600 * 24 as u64), 
-        auth.claims.identity.to_string())
+        device_model.dongle_id.clone())
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to generate token" ))?;
 
     Ok(Json(json!({
@@ -356,7 +356,7 @@ async fn upload_urls_handler(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get secrete"))?;
     let token = jwt::JWT::new(&jwt_secret.secret).generate_token(
         &(3600 * 24 as u64), 
-        auth.claims.identity.to_string())
+        device_model.dongle_id.clone())
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to generate token" ))?;
 
     data.validate_expiry();
@@ -602,6 +602,7 @@ struct DeviceSegmentQuery {
     end: Option<i64>,
     start: Option<i64>,
     limit: Option<u64>,
+    offset: Option<u64>,
     route_str: Option<String>,
 }
 
@@ -626,10 +627,11 @@ async fn route_segment(
         }
         vec!(route_model)
     } else {
-        RM::find_time_filtered_device_routes(&ctx.db, &dongle_id, params.start, params.end, params.limit).await?
+        RM::find_time_filtered_device_routes(&ctx.db, &dongle_id, params.start, params.end, params.limit, params.offset).await?
     };
     
     route_models.retain(|route| route.maxqlog != -1); // exclude ones wher the qlog is missing
+    
     let exp = 3600 * 24 as u64;
     let jwt_secret = ctx.config.get_jwt_config()?;
     let token = jwt::JWT::new(&jwt_secret.secret)

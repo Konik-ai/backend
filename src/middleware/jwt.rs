@@ -102,15 +102,23 @@ impl JWT {
     }
 
     pub fn validate_pem(&self, token: &str, pem: &[u8]) -> JWTResult<TokenData<UserClaims>> {
-        decode::<UserClaims>(
-            token,
-            &DecodingKey::from_rsa_pem(pem)?,
-            &Validation::new(self.algorithm),
-        )
+        // Select decoding key based on configured algorithm (RSA vs EC)
+        let key = match self.algorithm {
+            Algorithm::ES256 | Algorithm::ES384 => DecodingKey::from_ec_pem(pem)?,
+            _ => DecodingKey::from_rsa_pem(pem)?,
+        };
+
+        decode::<UserClaims>(token, &key, &Validation::new(self.algorithm))
     }
 
     pub fn parse_unverified(&self, token: &str) -> JWTResult<TokenData<UserClaims>> {
         let mut insecure_validation = Validation::new(self.algorithm);
+        // Accept any signing algorithm when parsing without signature verification
+        insecure_validation.algorithms = vec![
+            Algorithm::HS256, Algorithm::HS384, Algorithm::HS512,
+            Algorithm::RS256, Algorithm::RS384, Algorithm::RS512,
+            Algorithm::ES256, Algorithm::ES384,
+        ];
         insecure_validation.insecure_disable_signature_validation();
         insecure_validation.leeway = 30;
         insecure_validation.validate_nbf = true;
