@@ -1,15 +1,6 @@
 This is an open-source alternative to openpilot connect for use with openpilot software.
 To see the server in action, go to: https://stable.konik.ai/
 
-## wasmplot (WASM browser log viewer)
-
-A separate frontend in `wasmplot/` lets you parse qlog files (Cap'n Proto) in the browser with WebAssembly and plot series like CarState vEgo.
-
-Quick start:
-- Install Rust wasm tooling: `cargo install wasm-pack`
-- From `wasmplot/`, run `npm run dev` (or `pnpm dlx vite` after `wasm-pack build --target web`)
-- Open the shown URL, paste a qlog URL (.bz2 supported in Chromium via DecompressionStream), and click Plot.
-
 Thank you https://konik.ai for hosting!
 
 # To make your device connect to the server, complete the following steps:
