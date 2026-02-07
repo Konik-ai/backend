@@ -62,7 +62,8 @@ hmac = "0.12.1"
 hex = "0.4.3"
 thiserror = "1.0.60"
 image = "0.25.1"
-axum-server = { version = "0.6", features = ["tls-rustls"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std"] }
 rayon = "1.10.0"
 ffmpeg-next = "7.0.4"
 tempfile = "3.10.1"

@@ -13,3 +13,5 @@ target/
 tmp/
 .cargo/
 backup/
+capnproto-rust/
+.devcontainer/
