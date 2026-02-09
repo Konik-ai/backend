@@ -1,18 +1,25 @@
 use rand::rngs::StdRng;
-use rand::{SeedableRng, Rng};
 use rand::seq::SliceRandom;
-use time::serde::timestamp; use std::env::vars;
+use rand::{Rng, SeedableRng};
+use std::env::vars;
+use time::serde::timestamp;
 // For the `shuffle` method
+use crate::common::re::*;
+use crate::{
+    common,
+    workers::{
+        bootlog_parser::{BootlogParserWorker, BootlogParserWorkerArgs},
+        log_parser::{LogSegmentWorker, LogSegmentWorkerArgs},
+    },
+};
+use indicatif::{ProgressBar, ProgressStyle};
+use loco_rs::prelude::*;
+use reqwest::Client;
+use serde_json::{from_str, Value};
 use std::thread;
 use std::time::Duration;
-use tokio::time::sleep;
-use reqwest::Client;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde_json::{Value, from_str};
-use indicatif::{ProgressBar, ProgressStyle};
-use crate::{common, workers::{bootlog_parser::{BootlogParserWorker, BootlogParserWorkerArgs}, log_parser::{LogSegmentWorker, LogSegmentWorkerArgs}}};
-use loco_rs::prelude::*;
-use crate::common::re::*;
+use tokio::time::sleep;
 pub struct SeedFromMkv;
 
 #[async_trait]
@@ -26,13 +33,9 @@ impl Task for SeedFromMkv {
 
     async fn run(&self, app_context: &AppContext, vars: &task::Vars) -> Result<()> {
         println!("Task SeedFromMkv generated");
-        let dongle_id_filter = vars
-            .cli_arg("dongle_id")
-            .ok();
-        let timestamp_filter = vars
-            .cli_arg("timestamp")
-            .ok();
-        
+        let dongle_id_filter = vars.cli_arg("dongle_id").ok();
+        let timestamp_filter = vars.cli_arg("timestamp").ok();
+
         let client = Client::new();
         let throttle_ms = vars
             .cli_arg("throttle_ms")
@@ -41,11 +44,13 @@ impl Task for SeedFromMkv {
             .unwrap_or(25);
 
         // Hex characters for prefix chunking
-        let hex_chars = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", 
-            "a", "b", "c", "d", "e", "f"];
+        let hex_chars = [
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f",
+        ];
         let mut keys = Vec::with_capacity(1000);
         if let Some(dongle_id_filter) = dongle_id_filter {
-            let query = common::mkv_helpers::list_keys_starting_with(&format!("{}", dongle_id_filter));
+            let query =
+                common::mkv_helpers::list_keys_starting_with(&format!("{}", dongle_id_filter));
             let response = client.get(&query).send().await.unwrap();
 
             if !response.status().is_success() {
@@ -87,19 +92,22 @@ impl Task for SeedFromMkv {
             .unwrap()
             .progress_chars("#>-"),
         );
-        
+
         // Define regex pattern for key parsing
-        let segment_file_regex_string = format!(
-            r"^({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$)"
-        );
+        let segment_file_regex_string =
+            format!(r"^({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$)");
         let re = regex::Regex::new(&segment_file_regex_string).unwrap();
         for key_value in keys {
             progress_bar.inc(1);
-            let file_name = key_value.as_str().unwrap().trim_start_matches('/').to_string(); // Convert to string for independent ownership
-    
+            let file_name = key_value
+                .as_str()
+                .unwrap()
+                .trim_start_matches('/')
+                .to_string(); // Convert to string for independent ownership
+
             match re.captures(&file_name) {
                 Some(caps) => {
-                    let dongle_id = caps[1].to_string(); 
+                    let dongle_id = caps[1].to_string();
                     let timestamp = caps[2].to_string(); // DateTime or monotonic--uid
                     let segment = caps[3].to_string();
                     let file_type = caps[4].to_string();
@@ -112,36 +120,50 @@ impl Task for SeedFromMkv {
                         continue;
                     }
 
-                    if  file_type.to_string().ends_with(".unlog") || 
-                        file_type.to_string().ends_with("sprite.jpg") ||
-                        file_type.to_string().ends_with("coords.json") ||
-                        file_type.to_string().ends_with("events.json"){
-                        // skip this file 
-                        continue
-                    
-                    } else if (file_type.to_string().ends_with("qlog.bz2")) || (file_type.to_string().ends_with("qlog.zst")) {
+                    if file_type.to_string().ends_with(".unlog")
+                        || file_type.to_string().ends_with("sprite.jpg")
+                        || file_type.to_string().ends_with("coords.json")
+                        || file_type.to_string().ends_with("events.json")
+                    {
+                        // skip this file
+                        continue;
+                    } else if (file_type.to_string().ends_with("qlog.bz2"))
+                        || (file_type.to_string().ends_with("qlog.zst"))
+                    {
                         // delete the unlog file from mkv
-                        let unlog_file_name = file_name.replace(".bz2", ".unlog").replace(".zst", ".unlog");
-                        let internal_unlog_url = common::mkv_helpers::get_mkv_file_url(&unlog_file_name);
+                        let unlog_file_name = file_name
+                            .replace(".bz2", ".unlog")
+                            .replace(".zst", ".unlog");
+                        let internal_unlog_url =
+                            common::mkv_helpers::get_mkv_file_url(&unlog_file_name);
                         tracing::trace!("Deleting: {internal_unlog_url}");
                         let _response = client.delete(&internal_unlog_url).send().await.unwrap();
                         // delete the sprite file from mkv
-                        let sprite_file_name = file_name.replace("qlog.bz2", "sprite.jpg").replace("qlog.zst", "sprite.jpg");
-                        let internal_sprite_url = common::mkv_helpers::get_mkv_file_url(&sprite_file_name);
+                        let sprite_file_name = file_name
+                            .replace("qlog.bz2", "sprite.jpg")
+                            .replace("qlog.zst", "sprite.jpg");
+                        let internal_sprite_url =
+                            common::mkv_helpers::get_mkv_file_url(&sprite_file_name);
                         tracing::trace!("Deleting: {internal_sprite_url}");
                         let _response = client.delete(&internal_sprite_url).send().await.unwrap();
-                        let coords_file_name = file_name.replace("qlog.bz2", "coords.json").replace("qlog.zst", "coords.json");
-                        let internal_coords_url = common::mkv_helpers::get_mkv_file_url(&coords_file_name);
+                        let coords_file_name = file_name
+                            .replace("qlog.bz2", "coords.json")
+                            .replace("qlog.zst", "coords.json");
+                        let internal_coords_url =
+                            common::mkv_helpers::get_mkv_file_url(&coords_file_name);
                         tracing::trace!("Deleting: {internal_coords_url}");
                         let _response = client.delete(&internal_coords_url).send().await.unwrap();
-                        let events_file_name = file_name.replace("qlog.bz2", "events.json").replace("qlog.zst", "events.json");
-                        let internal_coords_url = common::mkv_helpers::get_mkv_file_url(&events_file_name);
+                        let events_file_name = file_name
+                            .replace("qlog.bz2", "events.json")
+                            .replace("qlog.zst", "events.json");
+                        let internal_coords_url =
+                            common::mkv_helpers::get_mkv_file_url(&events_file_name);
                         tracing::trace!("Deleting: {internal_coords_url}");
                         let _response = client.delete(&internal_coords_url).send().await.unwrap();
                     }
-    
+
                     let internal_url = common::mkv_helpers::get_mkv_file_url(&file_name);
-                    
+
                     let result = LogSegmentWorker::perform_later(
                         &app_context,
                         LogSegmentWorkerArgs {
@@ -150,9 +172,13 @@ impl Task for SeedFromMkv {
                             timestamp: timestamp.to_string(),
                             segment: segment.to_string(),
                             file: file_type.to_string(),
-                            create_time: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
+                            create_time: SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as i64,
                         },
-                    ).await;
+                    )
+                    .await;
                     match result {
                         Ok(_) => tracing::info!("Queued Worker"),
                         Err(e) => {
@@ -163,30 +189,42 @@ impl Task for SeedFromMkv {
                     if throttle_ms > 0 {
                         sleep(Duration::from_millis(throttle_ms)).await;
                     }
-                },
+                }
                 None => {
                     continue;
-                    
-                    
-                    let re_boot_log = regex::Regex::new(r"^([0-9a-z]{16})_([0-9a-z]{8}--[0-9a-z]{10}.bz2$)").unwrap();
+
+                    let re_boot_log =
+                        regex::Regex::new(r"^([0-9a-z]{16})_([0-9a-z]{8}--[0-9a-z]{10}.bz2$)")
+                            .unwrap();
                     match re_boot_log.captures(&file_name) {
                         Some(caps) => {
                             let dongle_id = &caps[1];
                             let file = &caps[2];
-                            let internal_file_url = common::mkv_helpers::get_mkv_file_url(&file_name);
-                            let unlog_internal_file_url = internal_file_url.replace(".bz2", ".unlog");
-                            let _response = client.delete(&unlog_internal_file_url).send().await.unwrap();
-                            let _result = BootlogParserWorker::perform_later(&app_context, 
+                            let internal_file_url =
+                                common::mkv_helpers::get_mkv_file_url(&file_name);
+                            let unlog_internal_file_url =
+                                internal_file_url.replace(".bz2", ".unlog");
+                            let _response = client
+                                .delete(&unlog_internal_file_url)
+                                .send()
+                                .await
+                                .unwrap();
+                            let _result = BootlogParserWorker::perform_later(
+                                &app_context,
                                 BootlogParserWorkerArgs {
                                     internal_file_url: internal_file_url.clone(),
                                     dongle_id: dongle_id.into(),
                                     file_name: file.into(),
-                                    create_time: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
+                                    create_time: SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs()
+                                        as i64,
                                 },
-                              ).await;
+                            )
+                            .await;
                         }
-                    
-                        
+
                         None => {
                             tracing::error!("Failed to parse key: {}", file_name);
                             continue;
@@ -205,6 +243,4 @@ impl Task for SeedFromMkv {
     }
 }
 
-pub async fn boot_logs() {
-
-}
+pub async fn boot_logs() {}

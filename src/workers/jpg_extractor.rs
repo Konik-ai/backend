@@ -1,13 +1,12 @@
-use serde::{Deserialize, Serialize};
 use loco_rs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 pub struct JpgExtractorWorker {
     pub ctx: AppContext,
 }
 
 #[derive(Deserialize, Debug, Serialize)]
-pub struct JpgExtractorWorkerArgs {
-}
+pub struct JpgExtractorWorkerArgs {}
 
 impl worker::AppWorker<JpgExtractorWorkerArgs> for JpgExtractorWorker {
     fn build(ctx: &AppContext) -> Self {

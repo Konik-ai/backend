@@ -1,25 +1,18 @@
-use std::collections::BTreeMap;
-use reqwest::Client;
+use chrono::{Duration, NaiveDateTime, ParseError, Utc};
+use loco_rs::prelude::*;
 use regex::Regex;
+use reqwest::Client;
 use serde_json::from_str;
 use serde_json::Value;
-use loco_rs::prelude::*;
-use chrono::{Utc, Duration, NaiveDateTime, ParseError};
-use sysinfo::Disks;
-use tower_http::trace;
+use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
+use sysinfo::Disks;
+use tower_http::trace;
 
 use crate::{
-    common::{
-        mkv_helpers,
-        re::*,
-    },
-    models::{
-        segments::SM,
-        devices::DM,
-        routes::RM,
-    },
+    common::{mkv_helpers, re::*},
+    models::{devices::DM, routes::RM, segments::SM},
 };
 
 fn parse_timestamp(timestamp: &str) -> Result<NaiveDateTime, ParseError> {
@@ -37,19 +30,18 @@ impl Task for Cleaner {
     }
     async fn run(&self, ctx: &AppContext, _vars: &task::Vars) -> Result<()> {
         println!("Task Cleaner generated");
-    
+
         let client = Client::new();
         let mut retention_minutes = 24 * 60 * 7; // keep for 7 days for debugging
 
         loop {
-
             let now: NaiveDateTime = Utc::now().naive_utc();
             let older_than = now - Duration::minutes(retention_minutes);
             tracing::info!("now: {now}, cleaning routes older than: {older_than}");
 
             // get a list of devices from the database
             let devices = DM::find_all_devices(&ctx.db).await;
-            
+
             for device in devices {
                 // get the routes that are older than the retention period
                 let routes = RM::find_time_filtered_device_routes(
@@ -59,7 +51,8 @@ impl Task for Cleaner {
                     Some(older_than.and_utc().timestamp_millis()),
                     Some(10000),
                     None,
-                ).await?;
+                )
+                .await?;
 
                 // check the length of each route
                 for route in routes {
@@ -84,12 +77,15 @@ impl Task for Cleaner {
                     }
                 }
             }
-
         }
     }
 }
 
 async fn delete_file(client: &Client, file_name: &str) {
     tracing::info!("Deleting file: {file_name}");
-    client.delete(&mkv_helpers::get_mkv_file_url(file_name)).send().await.unwrap();
+    client
+        .delete(&mkv_helpers::get_mkv_file_url(file_name))
+        .send()
+        .await
+        .unwrap();
 }

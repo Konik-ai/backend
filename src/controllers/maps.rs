@@ -1,27 +1,28 @@
 #![allow(clippy::unused_async)]
-use loco_rs::prelude::*;
 use axum::{
-    extract::{Extension, State}, 
-    http::{HeaderMap, StatusCode, Uri, Method}, 
+    body::{to_bytes, Body},
+    extract::{Extension, State},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::{Response, Result},
-    body::{Body, to_bytes},
 };
+use loco_rs::prelude::*;
 
-use std::time::Duration;
-use std::{env, collections::HashMap};
-use serde_urlencoded;
 use crate::middleware::auth::MyJWT;
-use governor::{Quota, DefaultDirectRateLimiter};
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use once_cell::sync::Lazy;
 use axum::http::Response as AxumResponse;
 use dashmap::DashMap;
+use governor::{DefaultDirectRateLimiter, Quota};
+use once_cell::sync::Lazy;
+use serde_urlencoded;
+use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::time::Duration;
+use std::{collections::HashMap, env};
 
 static GLOBAL_MINUTE_RATE_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::new(|| {
     Arc::new(DefaultDirectRateLimiter::new(
-        Quota::with_period(Duration::from_secs(60)).unwrap()
-        .allow_burst(NonZeroU32::new(100).unwrap()),
+        Quota::with_period(Duration::from_secs(60))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(100).unwrap()),
         Default::default(), // clock
         Default::default(), // state
     ))
@@ -29,8 +30,9 @@ static GLOBAL_MINUTE_RATE_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::n
 
 static GLOBAL_HOUR_RATE_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::new(|| {
     Arc::new(DefaultDirectRateLimiter::new(
-        Quota::with_period(Duration::from_secs(60 * 60)).unwrap()
-        .allow_burst(NonZeroU32::new(500).unwrap()),
+        Quota::with_period(Duration::from_secs(60 * 60))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(500).unwrap()),
         Default::default(), // clock
         Default::default(), // state
     ))
@@ -38,8 +40,9 @@ static GLOBAL_HOUR_RATE_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::new
 
 static GLOBAL_DAILY_RATE_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::new(|| {
     Arc::new(DefaultDirectRateLimiter::new(
-        Quota::with_period(Duration::from_secs(60 * 60 * 24)).unwrap()
-        .allow_burst(NonZeroU32::new(6000).unwrap()),
+        Quota::with_period(Duration::from_secs(60 * 60 * 24))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(6000).unwrap()),
         Default::default(), // clock
         Default::default(), // state
     ))
@@ -47,26 +50,26 @@ static GLOBAL_DAILY_RATE_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::ne
 
 static GLOBAL_MONTHLY_LIMITER: Lazy<Arc<DefaultDirectRateLimiter>> = Lazy::new(|| {
     Arc::new(DefaultDirectRateLimiter::new(
-        Quota::with_period(Duration::from_secs(60 * 60 * 24 * 30)).unwrap()
-        .allow_burst(NonZeroU32::new(100_000).unwrap()),
+        Quota::with_period(Duration::from_secs(60 * 60 * 24 * 30))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(100_000).unwrap()),
         Default::default(),
         Default::default(),
     ))
 });
 
-static USER_LIMITERS: Lazy<DashMap<String, Arc<DefaultDirectRateLimiter>>> = Lazy::new(|| {
-    DashMap::new()
-});
+static USER_LIMITERS: Lazy<DashMap<String, Arc<DefaultDirectRateLimiter>>> =
+    Lazy::new(|| DashMap::new());
 
 fn build_user_limiter() -> DefaultDirectRateLimiter {
     DefaultDirectRateLimiter::new(
-        Quota::with_period(Duration::from_secs(60 * 60 * 24)).unwrap()
-             .allow_burst(NonZeroU32::new(200).unwrap()),
+        Quota::with_period(Duration::from_secs(60 * 60 * 24))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(200).unwrap()),
         Default::default(),
         Default::default(),
     )
 }
-
 
 #[derive(Debug)]
 pub enum ErrorResponse {
@@ -81,7 +84,6 @@ impl From<reqwest::Error> for ErrorResponse {
     }
 }
 
-
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> Response {
         let (status, body) = match self {
@@ -89,10 +91,7 @@ impl IntoResponse for ErrorResponse {
                 StatusCode::BAD_GATEWAY,
                 format!("Upstream service error: {}", message),
             ),
-            ErrorResponse::Unauthorized => (
-                StatusCode::UNAUTHORIZED,
-                "Unauthorized".to_string(),
-            ),
+            ErrorResponse::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             ErrorResponse::InternalServerError => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error occurred".to_string(),
@@ -113,7 +112,6 @@ pub fn routes() -> Routes {
         .add("/*path", axum::routing::any(proxy_mapbox))
 }
 
-
 pub async fn proxy_mapbox(
     auth: MyJWT,
     State(_ctx): State<AppContext>,
@@ -132,7 +130,10 @@ pub async fn proxy_mapbox(
         .clone();
 
     if user_limiter.check().is_err() {
-        tracing::trace!("User {} exceeded their personal quota", auth.claims.identity);
+        tracing::trace!(
+            "User {} exceeded their personal quota",
+            auth.claims.identity
+        );
         return Ok(AxumResponse::builder()
             .status(StatusCode::TOO_MANY_REQUESTS)
             .body(Body::from("Personal rate limit exceeded. Try again later."))
@@ -144,7 +145,7 @@ pub async fn proxy_mapbox(
     let hour_check = GLOBAL_HOUR_RATE_LIMITER.check().is_err();
     let daily_check = GLOBAL_DAILY_RATE_LIMITER.check().is_err();
     let monthly_check = GLOBAL_MONTHLY_LIMITER.check().is_err();
-    
+
     if minute_check || hour_check || daily_check || monthly_check {
         tracing::trace!("Rate limit exceeded");
         return Ok(AxumResponse::builder()
@@ -176,7 +177,9 @@ pub async fn proxy_mapbox(
     tracing::debug!("the mapbox url is: {}", mapbox_url);
 
     let size_limit = 10 * 1024 * 1024;
-    let body_bytes = to_bytes(body, size_limit).await.map_err(|_| ErrorResponse::InternalServerError)?;
+    let body_bytes = to_bytes(body, size_limit)
+        .await
+        .map_err(|_| ErrorResponse::InternalServerError)?;
     let reqwest_body = reqwest::Body::from(body_bytes);
 
     let request_builder = client

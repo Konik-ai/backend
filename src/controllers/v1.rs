@@ -1,33 +1,27 @@
-use loco_rs::prelude::*;
 use axum::{
-    extract::{Path, Query, State}, routing::patch, Extension
-};
-use reqwest::{StatusCode,Client};
-use serde_json::{json, Value};
-use serde::{Deserialize, Serialize};
-use std::{
-    env, 
-    time::{SystemTime,
-        UNIX_EPOCH,
-        Duration
-    },
-    error::Error
+    extract::{Path, Query, State},
+    routing::patch,
+    Extension,
 };
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use jsonwebtoken::get_current_timestamp;
-
-use crate::{common, 
-    middleware::{jwt, auth::MyJWT}, 
-    models::{
-        devices::DM,
-        segments::SM,
-        routes::RM,
-        users::UM,
-        device_msg_queues::DMQM,
-    }
+use loco_rs::prelude::*;
+use reqwest::{Client, StatusCode};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::Sha256;
+use std::{
+    env,
+    error::Error,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
 use super::v1_responses::*;
+use crate::{
+    common,
+    middleware::{auth::MyJWT, jwt},
+    models::{device_msg_queues::DMQM, devices::DM, routes::RM, segments::SM, users::UM},
+};
 
 // Alias for HMAC-SHA256
 type HmacSha256 = Hmac<Sha256>;
@@ -41,7 +35,7 @@ struct UploadUrlQuery {
 // Structure for handling multiple upload paths
 #[derive(Deserialize)]
 struct UploadUrlsQuery {
-    paths: Vec<String>,  // Corrected to Vec<String> to handle multiple paths
+    paths: Vec<String>, // Corrected to Vec<String> to handle multiple paths
     expiry_days: Option<i32>,
 }
 
@@ -51,31 +45,33 @@ trait ExpiryValidation {
 }
 
 impl ExpiryValidation for UploadUrlQuery {
-  fn validate_expiry(&mut self) {
-    match self.expiry_days {
-      Some(days) =>
-        if !(days >= 1 && days <= 30) {
-          self.expiry_days = Some(30);
+    fn validate_expiry(&mut self) {
+        match self.expiry_days {
+            Some(days) => {
+                if !(days >= 1 && days <= 30) {
+                    self.expiry_days = Some(30);
+                }
+            }
+            None => {
+                self.expiry_days = Some(1);
+            }
         }
-      None => {
-        self.expiry_days = Some(1);
-      }
     }
-  }
 }
 
 impl ExpiryValidation for UploadUrlsQuery {
-  fn validate_expiry(&mut self) {
-    match self.expiry_days {
-      Some(days) =>
-        if !(days >= 1 && days <= 30) {
-          self.expiry_days = Some(30);
+    fn validate_expiry(&mut self) {
+        match self.expiry_days {
+            Some(days) => {
+                if !(days >= 1 && days <= 30) {
+                    self.expiry_days = Some(30);
+                }
+            }
+            None => {
+                self.expiry_days = Some(1);
+            }
         }
-      None => {
-        self.expiry_days = Some(1);
-      }
     }
-  }
 }
 
 #[derive(Serialize)]
@@ -93,11 +89,13 @@ pub async fn get_route_files(
     auth: MyJWT,
     State(ctx): State<AppContext>,
     Path(route_id): Path<String>,
-    Extension(client): Extension<Client>
+    Extension(client): Extension<Client>,
 ) -> impl IntoResponse {
     // Do not need to check for data ownership because its done when you try to fetch the data
     let jwt_secret = ctx.config.get_jwt_config()?;
-    if let Ok(token) = jwt::JWT::new(&jwt_secret.secret).generate_token(&(3600 * 24 as u64), auth.claims.identity.to_string()) {
+    if let Ok(token) = jwt::JWT::new(&jwt_secret.secret)
+        .generate_token(&(3600 * 24 as u64), auth.claims.identity.to_string())
+    {
         println!("Fetching files for Route ID: {}", route_id);
         let response = get_links_for_route(&route_id, &client, &token).await;
         match response {
@@ -107,7 +105,6 @@ pub async fn get_route_files(
     } else {
         return unauthorized("err");
     }
-
 }
 
 // Generic camera stream generator
@@ -122,14 +119,12 @@ where
     F: FnMut(&mut SM) -> Option<(String, f64)> + Send,
 {
     let mut segment_models = SM::find_segments_by_route(&ctx.db, &canonical_route_name).await?;
-    segment_models.retain(|segment| {
-        match url_field {
-            "qcam_url" => !segment.qcam_url.is_empty(),
-            "fcam_url" => !segment.fcam_url.is_empty(),
-            "dcam_url" => !segment.dcam_url.is_empty(),
-            "ecam_url" => !segment.ecam_url.is_empty(),
-            _ => false,
-        }
+    segment_models.retain(|segment| match url_field {
+        "qcam_url" => !segment.qcam_url.is_empty(),
+        "fcam_url" => !segment.fcam_url.is_empty(),
+        "dcam_url" => !segment.dcam_url.is_empty(),
+        "ecam_url" => !segment.ecam_url.is_empty(),
+        _ => false,
     });
     segment_models.sort_by(|a, b| a.number.cmp(&b.number));
     let exp = 3600 * 24 as u64;
@@ -163,14 +158,25 @@ where
 }
 
 // Wrappers for each camera type
-async fn get_qcam_stream(auth: MyJWT, State(ctx): State<AppContext>, Path(canonical_route_name): Path<String>) -> Result<Response> {
-    get_camera_stream(auth, State(ctx), Path(canonical_route_name), |seg| {
-        if !seg.qcam_url.is_empty() {
-            Some((seg.qcam_url.clone(), seg.qcam_duration as f64))
-        } else {
-            None
-        }
-    }, "qcam_url").await
+async fn get_qcam_stream(
+    auth: MyJWT,
+    State(ctx): State<AppContext>,
+    Path(canonical_route_name): Path<String>,
+) -> Result<Response> {
+    get_camera_stream(
+        auth,
+        State(ctx),
+        Path(canonical_route_name),
+        |seg| {
+            if !seg.qcam_url.is_empty() {
+                Some((seg.qcam_url.clone(), seg.qcam_duration as f64))
+            } else {
+                None
+            }
+        },
+        "qcam_url",
+    )
+    .await
 }
 
 async fn get_share_signature(
@@ -178,12 +184,19 @@ async fn get_share_signature(
     State(ctx): State<AppContext>,
     Path(_fullname): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
-    let jwt_secret = ctx.config.get_jwt_config()
+    let jwt_secret = ctx
+        .config
+        .get_jwt_config()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get secret"))?;
     let token = jwt::JWT::new(&jwt_secret.secret)
         .generate_token(&(3600 * 24 as u64), auth.claims.identity.to_string())
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to generate token"))?;
-    
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to generate token",
+            )
+        })?;
+
     let response = ShareSignatureResponse {
         exp: (get_current_timestamp() + (3600 * 24 as u64)).to_string(),
         sig: token,
@@ -191,11 +204,10 @@ async fn get_share_signature(
     Ok(format::json(response))
 }
 
-
 async fn get_links_for_route(
     route_id: &str,
     client: &Client,
-    jwt: &str
+    jwt: &str,
 ) -> Result<(StatusCode, FilesResponse), Box<dyn Error>> {
     let key = common::mkv_helpers::list_keys_starting_with(&route_id.replace("|", "_"));
     // Fetch data from the URL
@@ -209,24 +221,26 @@ async fn get_links_for_route(
     let mut urls = Vec::new();
 
     if let Some(keys) = keys {
-        keys.iter().filter_map(|key| key.as_str()).for_each(|key_str| {
-            if let [prefix, route] = key_str.split('_').collect::<Vec<_>>()[..] {
-                urls.push(format!("{}/connectdata{}/{}?sig={}",
-                    env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
-                    prefix,
-                    transform_route_string(route),
-                    jwt
-                ));
-            }
-        });
+        keys.iter()
+            .filter_map(|key| key.as_str())
+            .for_each(|key_str| {
+                if let [prefix, route] = key_str.split('_').collect::<Vec<_>>()[..] {
+                    urls.push(format!(
+                        "{}/connectdata{}/{}?sig={}",
+                        env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
+                        prefix,
+                        transform_route_string(route),
+                        jwt
+                    ));
+                }
+            });
     }
-    
+
     // Assuming sort_keys_to_response is an async function that takes a Vec<String> and returns a FilesResponse
     let response_json = sort_keys_to_response(urls).await;
-    
+
     Ok((code, response_json))
 }
-
 
 async fn sort_keys_to_response(keys: Vec<String>) -> FilesResponse {
     let mut cameras = vec![];
@@ -256,7 +270,6 @@ async fn sort_keys_to_response(keys: Vec<String>) -> FilesResponse {
             logs.push(key.into());
             continue;
         }
-
     }
     FilesResponse {
         cameras: cameras,
@@ -272,24 +285,24 @@ async fn get_upload_url(
     auth: MyJWT,
     State(ctx): State<AppContext>,
     Path(dongle_id): Path<String>,
-    Query(mut params): Query<UploadUrlQuery>
+    Query(mut params): Query<UploadUrlQuery>,
 ) -> impl IntoResponse {
-    let device_model = if let Some(device_model) = auth.device_model{
+    let device_model = if let Some(device_model) = auth.device_model {
         device_model
     } else if let Some(user_model) = auth.user_model {
         if user_model.superuser {
             DM::find_device(&ctx.db, &dongle_id)
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
         } else {
             DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id)
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
         }
     } else {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, "no device or user model"));
-    };    
-    
+    };
+
     if !device_model.uploads_allowed {
         return Err((StatusCode::FORBIDDEN, "Uploads ignored"));
     }
@@ -297,23 +310,30 @@ async fn get_upload_url(
         return Err((StatusCode::BAD_REQUEST, "dongle_id does not match identity"));
     }
 
-    let upload_url = format!("{}/connectincoming/{}/{}",
+    let upload_url = format!(
+        "{}/connectincoming/{}/{}",
         env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
         device_model.dongle_id,
-        transform_route_string(&params.path));
-    
+        transform_route_string(&params.path)
+    );
+
     tracing::info!("Device will upload to {upload_url}");
     // curl http://host/v1.4/ccfab3437bea5257/upload_url/?path=2019-06-06--11-30-31--9/fcamera.hevc&expiry_days=1
     // Assuming default expiry is 1 day if not specified
     params.validate_expiry();
 
-    let jwt_secret = ctx.config
+    let jwt_secret = ctx
+        .config
         .get_jwt_config()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get secrete"))?;
-    let token = jwt::JWT::new(&jwt_secret.secret).generate_token(
-        &(3600 * 24 as u64), 
-        device_model.dongle_id.clone())
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to generate token" ))?;
+    let token = jwt::JWT::new(&jwt_secret.secret)
+        .generate_token(&(3600 * 24 as u64), device_model.dongle_id.clone())
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to generate token",
+            )
+        })?;
 
     Ok(Json(json!({
         "url": upload_url,
@@ -328,61 +348,64 @@ async fn upload_urls_handler(
     Path(dongle_id): Path<String>,
     Json(mut data): Json<UploadUrlsQuery>,
 ) -> impl IntoResponse {
-    let device_model = if let Some(device_model) = auth.device_model{
+    let device_model = if let Some(device_model) = auth.device_model {
         device_model
     } else if let Some(user_model) = auth.user_model {
         if user_model.superuser {
             DM::find_device(&ctx.db, &dongle_id)
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
         } else {
             DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id)
-            .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "no device model"))?
         }
     } else {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, "no device or user model"));
     };
-    
+
     if !device_model.uploads_allowed {
         return Err((StatusCode::FORBIDDEN, "Uploads ignored"));
     }
     if device_model.dongle_id != dongle_id {
         return Err((StatusCode::BAD_REQUEST, "dongle_id does not match identity"));
     }
-    
-    let jwt_secret = ctx.config
+
+    let jwt_secret = ctx
+        .config
         .get_jwt_config()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get secrete"))?;
-    let token = jwt::JWT::new(&jwt_secret.secret).generate_token(
-        &(3600 * 24 as u64), 
-        device_model.dongle_id.clone())
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to generate token" ))?;
+    let token = jwt::JWT::new(&jwt_secret.secret)
+        .generate_token(&(3600 * 24 as u64), device_model.dongle_id.clone())
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to generate token",
+            )
+        })?;
 
     data.validate_expiry();
 
-    let urls: Vec<UrlResponse> = data.paths.iter().map(|path: &String| {
-        UrlResponse {
-            url: format!("{}/connectincoming/{dongle_id}/{}?sig={token}",
+    let urls: Vec<UrlResponse> = data
+        .paths
+        .iter()
+        .map(|path: &String| UrlResponse {
+            url: format!(
+                "{}/connectincoming/{dongle_id}/{}?sig={token}",
                 env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
                 transform_route_string(path),
             ),
-        }
-    }).collect::<Vec<_>>();
-    return Ok(format::json(urls))
+        })
+        .collect::<Vec<_>>();
+    return Ok(format::json(urls));
 }
 
 fn transform_route_string(input_string: &str) -> String {
     use crate::common::re::*;
-    let segment_file_regex_string = format!(
-        r"^({ROUTE_NAME})--({NUMBER})(?:--|/)({ALLOWED_FILENAME}$)"
-    );
-    let boot_file_regex_string = format!(
-        r"^boot/({ROUTE_NAME}).(?:bz2|zst)$"
-    );
-    let crash_file_regex_string = format!(
-        r"^crash/({ROUTE_NAME})_([0-9a-f]{{8}})_(.+)$"
-    );
+    let segment_file_regex_string =
+        format!(r"^({ROUTE_NAME})--({NUMBER})(?:--|/)({ALLOWED_FILENAME}$)");
+    let boot_file_regex_string = format!(r"^boot/({ROUTE_NAME}).(?:bz2|zst)$");
+    let crash_file_regex_string = format!(r"^crash/({ROUTE_NAME})_([0-9a-f]{{8}})_(.+)$");
     // example input_string = 2024-03-02--19-02-46--0--rlog.bz2 or 2024-03-02--19-02-46--0/rlog
     // converts to =          2024-03-02--19-02-46/0/rlog.bz2
     let re_drive_log = regex::Regex::new(&segment_file_regex_string).unwrap();
@@ -391,16 +414,18 @@ fn transform_route_string(input_string: &str) -> String {
     let re_crash_log = regex::Regex::new(&crash_file_regex_string).unwrap();
     let re_boot_log = regex::Regex::new(&boot_file_regex_string).unwrap();
     if let Some(caps) = re_drive_log.captures(input_string) {
-        format!("{}/{}/{}",
+        format!(
+            "{}/{}/{}",
             &caps[1], // DateTime or monotonic--uid
             &caps[2], // Segment number
             &caps[3]  // File name
         )
     } else if let Some(caps) = re_crash_log.captures(input_string) {
-        format!("crash/{}/{}/{}",
+        format!(
+            "crash/{}/{}/{}",
             &caps[1], // ID
             &caps[2], // commit
-            &caps[3] // name
+            &caps[3]  // name
         )
     } else if re_boot_log.is_match(input_string) {
         input_string.to_owned()
@@ -424,9 +449,9 @@ async fn unpair(
         let mut active_device_model = device_model.into_active_model();
         active_device_model.owner_id = ActiveValue::Set(None);
         active_device_model.update(&ctx.db).await?;
-        format::json(UnPairResponse {success: true})
+        format::json(UnPairResponse { success: true })
     } else {
-        format::json(UnPairResponse {success: false})
+        format::json(UnPairResponse { success: false })
     }
 }
 
@@ -445,22 +470,20 @@ async fn device_info(
         auth.device_model.unwrap()
     };
 
-    format::json(
-        DeviceInfoResponse {
-            dongle_id: device.dongle_id,
-            alias: device.alias,
-            serial: device.serial,
-            last_athena_ping: device.last_athena_ping,
-            ignore_uploads: !device.uploads_allowed,
-            is_paired: device.owner_id.is_some(),
-            public_key: device.public_key,
-            prime: device.prime,
-            prime_type: device.prime_type,
-            trial_claimed: true,
-            sim_id: device.sim_id,
-            ..Default::default()
-        }
-    )
+    format::json(DeviceInfoResponse {
+        dongle_id: device.dongle_id,
+        alias: device.alias,
+        serial: device.serial,
+        last_athena_ping: device.last_athena_ping,
+        ignore_uploads: !device.uploads_allowed,
+        is_paired: device.owner_id.is_some(),
+        public_key: device.public_key,
+        prime: device.prime,
+        prime_type: device.prime_type,
+        trial_claimed: true,
+        sim_id: device.sim_id,
+        ..Default::default()
+    })
 }
 
 async fn device_location(
@@ -481,13 +504,11 @@ async fn device_location(
             time,
             ..Default::default()
         };
-    
+
         format::json(response)
     } else {
         return loco_rs::controller::bad_request("Devices can't do this");
     }
-
-    
 }
 
 // post /devices/:dongle_id/firehose
@@ -513,24 +534,22 @@ async fn set_firehose(
             DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?; // just error if not found
         }
     } else {
-        return loco_rs::controller::bad_request("devices can't do this")
+        return loco_rs::controller::bad_request("devices can't do this");
     }
 
     let device_model = DM::find_device(&ctx.db, &dongle_id).await?;
     if device_model.dongle_id != dongle_id {
-        return loco_rs::controller::unauthorized("device does not match dongle_id in request")
+        return loco_rs::controller::unauthorized("device does not match dongle_id in request");
     }
-    
+
     let mut active_device_model = device_model.into_active_model();
     active_device_model.firehose = ActiveValue::Set(data.firehose);
     active_device_model.update(&ctx.db).await?;
 
-    format::json(
-        GenericResponse {
-            success: true,
-            message: format!("Firehose set to {}", data.firehose)
-        }
-    )
+    format::json(GenericResponse {
+        success: true,
+        message: format!("Firehose set to {}", data.firehose),
+    })
 }
 
 async fn device_stats(
@@ -544,7 +563,7 @@ async fn device_stats(
         }
     } else {
         if auth.device_model.unwrap().dongle_id != dongle_id {
-            return loco_rs::controller::bad_request("identity does not match dongle_id in request")
+            return loco_rs::controller::bad_request("identity does not match dongle_id in request");
         }
     }
     // Get the current time in milliseconds since the UNIX epoch
@@ -554,15 +573,15 @@ async fn device_stats(
         .as_millis() as i64;
 
     // Calculate the start of the week (7 days ago)
-    let one_week_ago_millis = utc_time_now_millis - Duration::from_secs(7 * 24 * 60 * 60).as_millis() as i64;
+    let one_week_ago_millis =
+        utc_time_now_millis - Duration::from_secs(7 * 24 * 60 * 60).as_millis() as i64;
 
     // Get total stats
     let (total_length, route_count, total_millis) = RM::total_length_count_and_time_filtered(
-        &ctx.db,
-        &dongle_id,
-        None, // No time filter for total stats
+        &ctx.db, &dongle_id, None, // No time filter for total stats
         None,
-    ).await?;
+    )
+    .await?;
 
     // Get stats for the past week
     let (week_length, week_count, week_millis) = RM::total_length_count_and_time_filtered(
@@ -570,19 +589,19 @@ async fn device_stats(
         &dongle_id,
         Some(one_week_ago_millis), // From one week ago
         Some(utc_time_now_millis), // To now
-    ).await?;
+    )
+    .await?;
 
-
-    let ret = DeviceStatsResponse{
+    let ret = DeviceStatsResponse {
         all: DeviceStats {
             distance: total_length,
             routes: route_count,
-            minutes: (total_millis/(1000*60)) as i32
+            minutes: (total_millis / (1000 * 60)) as i32,
         },
         week: DeviceStats {
             distance: week_length,
             routes: week_count,
-            minutes: (week_millis/(1000*60)) as i32
+            minutes: (week_millis / (1000 * 60)) as i32,
         },
     };
 
@@ -594,7 +613,9 @@ async fn device_users(
     State(_ctx): State<AppContext>,
     Path(_dongle_id): Path<String>,
 ) -> Result<Response> {
-    format::json(DeviceUsersResponse {..Default::default()})
+    format::json(DeviceUsersResponse {
+        ..Default::default()
+    })
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -617,28 +638,35 @@ async fn route_segment(
             DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?; // just error if not found
         }
     } else {
-        return loco_rs::controller::bad_request("devices can't do this")
+        return loco_rs::controller::bad_request("devices can't do this");
     }
 
     let mut route_models = if let Some(route_str) = params.route_str {
         let route_model = RM::find_route(&ctx.db, &route_str).await?;
         if route_model.device_dongle_id != dongle_id {
-            return loco_rs::controller::unauthorized("route does not belong to device")
+            return loco_rs::controller::unauthorized("route does not belong to device");
         }
-        vec!(route_model)
+        vec![route_model]
     } else {
-        RM::find_time_filtered_device_routes(&ctx.db, &dongle_id, params.start, params.end, params.limit, params.offset).await?
+        RM::find_time_filtered_device_routes(
+            &ctx.db,
+            &dongle_id,
+            params.start,
+            params.end,
+            params.limit,
+            params.offset,
+        )
+        .await?
     };
-    
+
     route_models.retain(|route| route.maxqlog != -1); // exclude ones wher the qlog is missing
-    
+
     let exp = 3600 * 24 as u64;
     let jwt_secret = ctx.config.get_jwt_config()?;
     let token = jwt::JWT::new(&jwt_secret.secret)
-        .generate_token(
-        &exp,
-        auth.claims.identity.to_string()).unwrap_or_default();
-        
+        .generate_token(&exp, auth.claims.identity.to_string())
+        .unwrap_or_default();
+
     for route in route_models.iter_mut() {
         route.share_sig = token.clone();
         route.share_exp = exp.to_string();
@@ -655,18 +683,13 @@ async fn route_info(
     let route_model = RM::find_route(&ctx.db, &fullname).await?;
     if let Some(user_model) = auth.user_model {
         if user_model.superuser {
-
         } else {
-            DM::find_user_device(
-                &ctx.db, 
-                user_model.id,
-                &route_model.device_dongle_id)
-                .await?; // just error if not found
+            DM::find_user_device(&ctx.db, user_model.id, &route_model.device_dongle_id).await?;
+            // just error if not found
         }
     }
     format::json(route_model)
 }
-
 
 async fn patch_route(
     auth: MyJWT,
@@ -677,13 +700,8 @@ async fn patch_route(
     let route_model = RM::find_route(&ctx.db, &fullname).await?;
     if let Some(user_model) = auth.user_model {
         if user_model.superuser {
-
         } else {
-            DM::find_user_device(
-                &ctx.db, 
-                user_model.id,
-                &route_model.device_dongle_id)
-                .await?;
+            DM::find_user_device(&ctx.db, user_model.id, &route_model.device_dongle_id).await?;
         }
     }
     let mut active_route_model = route_model.into_active_model();
@@ -694,27 +712,20 @@ async fn patch_route(
     format::json(model)
 }
 
-
-async fn preserved_routes( // TODO
+async fn preserved_routes(
+    // TODO
     auth: MyJWT,
     State(ctx): State<AppContext>,
     Path(dongle_id): Path<String>,
 ) -> Result<Response> {
     if let Some(user_model) = auth.user_model {
-        if user_model.superuser {
-
-        } else {
-            DM::find_user_device(
-                &ctx.db, 
-                user_model.id, 
-                &dongle_id)
-            .await?; // just error if not found
+        if !user_model.superuser {
+            DM::find_user_device(&ctx.db, user_model.id, &dongle_id).await?; // just error if not found
         }
     }
     let route_models = RM::find_device_routes(&ctx.db, &dongle_id).await?;
     format::json(route_models)
 }
-
 
 async fn get_my_devices(
     auth: MyJWT,
@@ -722,7 +733,9 @@ async fn get_my_devices(
 ) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
     // TODO: implement authorized devices!
 
-    let user_model = auth.user_model.ok_or_else(|| (StatusCode::BAD_REQUEST, ""))?;
+    let user_model = auth
+        .user_model
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, ""))?;
     let device_models = if user_model.superuser {
         DM::find_all_devices(&ctx.db).await
     } else {
@@ -746,7 +759,6 @@ async fn get_my_devices(
             trial_claimed: true,
             online: device_model.online,
             ..Default::default()
-
         };
         devices.push(device);
     }
@@ -754,33 +766,24 @@ async fn get_my_devices(
     Ok(format::json(devices))
 }
 
-
-async fn get_me(
-    auth: MyJWT,
-    State(ctx): State<AppContext>,
-) -> Result<Response> {
+async fn get_me(auth: MyJWT, State(ctx): State<AppContext>) -> Result<Response> {
     let user_model = UM::find_by_identity(&ctx.db, &auth.claims.identity).await?;
     format::json(MeResponse {
-       email: user_model.email,
-       id: String::from(user_model.identity),
-       regdate: user_model.created_at.and_utc().timestamp(),
-       points: user_model.points,
-       superuser: user_model.superuser,
-       username: user_model.name, // TODO change the usermode names to match comma api to simplify this
+        email: user_model.email,
+        id: String::from(user_model.identity),
+        regdate: user_model.created_at.and_utc().timestamp(),
+        points: user_model.points,
+        superuser: user_model.superuser,
+        username: user_model.name, // TODO change the usermode names to match comma api to simplify this
     })
 }
 
-async fn get_me_jwt(
-    auth: MyJWT,
-    State(ctx): State<AppContext>,
-) -> Result<Response> {
+async fn get_me_jwt(auth: MyJWT, State(ctx): State<AppContext>) -> Result<Response> {
     let jwt_secret = ctx.config.get_jwt_config()?;
     let token = jwt::JWT::new(&jwt_secret.secret)
-        .generate_token(
-            &(3600 * 24 as u64), 
-            auth.claims.identity.to_string())
+        .generate_token(&(3600 * 24 as u64), auth.claims.identity.to_string())
         .map_err(|_e| loco_rs::Error::Message("Failed to generate JWT token".to_string()))?;
-    
+
     format::json(GenericResponse {
         success: true,
         message: token,
@@ -813,21 +816,19 @@ async fn update_device_alias(
     active_device_model.alias = ActiveValue::Set(alias.alias);
     active_device_model.update(&ctx.db).await?;
     let device_model = DM::find_device(&ctx.db, &dongle_id).await?;
-    format::json(
-        DeviceInfoResponse {
-            dongle_id: device_model.dongle_id,
-            alias: device_model.alias,
-            serial: device_model.serial,
-            last_athena_ping: device_model.last_athena_ping,
-            ignore_uploads: !device_model.uploads_allowed,
-            is_paired: device_model.owner_id.is_some(),
-            public_key: device_model.public_key,
-            prime: device_model.prime,
-            prime_type: device_model.prime_type,
-            sim_id: device_model.sim_id,
-            ..Default::default()
-        }
-    )
+    format::json(DeviceInfoResponse {
+        dongle_id: device_model.dongle_id,
+        alias: device_model.alias,
+        serial: device_model.serial,
+        last_athena_ping: device_model.last_athena_ping,
+        ignore_uploads: !device_model.uploads_allowed,
+        is_paired: device_model.owner_id.is_some(),
+        public_key: device_model.public_key,
+        prime: device_model.prime,
+        prime_type: device_model.prime_type,
+        sim_id: device_model.sim_id,
+        ..Default::default()
+    })
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -839,7 +840,7 @@ struct Destination {
 }
 
 async fn set_destination(
-    auth: MyJWT,   
+    auth: MyJWT,
     State(ctx): State<AppContext>,
     Path(dongle_id): Path<String>,
     Json(destination): Json<Destination>,
@@ -860,7 +861,7 @@ async fn set_destination(
         return Ok((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
     }
 
-    let msg = JsonRpcRequest{
+    let msg = JsonRpcRequest {
         method: "setNavDestination".to_string(),
         params: Some(serde_json::to_value(destination.clone())?),
         ..Default::default()
@@ -868,11 +869,12 @@ async fn set_destination(
     DMQM::insert_msg(&ctx.db, &dongle_id, msg).await?;
 
     // Deserialize the current locations
-    let mut locations: Vec<SavedLocation> = if let Some(locations_json) = active_device.locations.as_ref() {
-        serde_json::from_value(locations_json.clone()).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let mut locations: Vec<SavedLocation> =
+        if let Some(locations_json) = active_device.locations.as_ref() {
+            serde_json::from_value(locations_json.clone()).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
     // Check if the label exists and update, otherwise add the new location
     let mut location_found = false;
@@ -919,7 +921,7 @@ async fn set_destination(
                 "dongle_id": dongle_id,
                 "saved_next": !is_online
             });
-        }, // Respond with success
+        } // Respond with success
         Err(e) => {
             tracing::error!("Failed to update device locations. DB Error {}", e);
             response = serde_json::json!({
@@ -932,17 +934,19 @@ async fn set_destination(
     }
 
     format::json(response)
-
 }
 
-
 async fn get_next_destination(
-    auth: MyJWT,   
+    auth: MyJWT,
     State(ctx): State<AppContext>,
     //Path(dongle_id): Path<String>,
 ) -> impl IntoResponse {
     if auth.device_model.is_none() {
-        return (StatusCode::BAD_REQUEST, format::json("Only devices can use this endpoint.")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format::json("Only devices can use this endpoint."),
+        )
+            .into_response();
     }
 
     if let Some(mut device_model) = auth.device_model {
@@ -961,12 +965,17 @@ async fn get_next_destination(
                 let mut active_device_model = device_model.into_active_model();
 
                 // Update the device model with the modified locations
-                active_device_model.locations = ActiveValue::Set(Some(serde_json::to_value(&locations).unwrap()));
+                active_device_model.locations =
+                    ActiveValue::Set(Some(serde_json::to_value(&locations).unwrap()));
 
                 // Save the updated device model
                 if let Err(e) = active_device_model.update(&ctx.db).await {
                     tracing::error!("Failed to update device locations. DB Error: {}", e);
-                    return (StatusCode::INTERNAL_SERVER_ERROR, format::json(serde_json::Value::Null)).into_response();
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format::json(serde_json::Value::Null),
+                    )
+                        .into_response();
                 }
 
                 // Return the next location as the response
@@ -994,7 +1003,7 @@ struct SavedLocation {
     place_details: String,
     latitude: f64,
     longitude: f64,
-    save_type: String,  // Could be an enum, but using String for simplicity
+    save_type: String, // Could be an enum, but using String for simplicity
     label: Option<String>,
     modified: String,
 }
@@ -1005,7 +1014,7 @@ struct PutSavedLocation {
     place_details: String,
     latitude: f64,
     longitude: f64,
-    save_type: String,  // Could be an enum, but using String for simplicity
+    save_type: String, // Could be an enum, but using String for simplicity
     label: Option<String>,
 }
 
@@ -1027,11 +1036,12 @@ async fn put_locations(
     }
 
     // Deserialize the current locations
-    let mut locations: Vec<SavedLocation> = if let Some(locations_json) = active_device.locations.as_ref() {
-        serde_json::from_value(locations_json.clone()).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let mut locations: Vec<SavedLocation> =
+        if let Some(locations_json) = active_device.locations.as_ref() {
+            serde_json::from_value(locations_json.clone()).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
     // Check if the label exists and update, otherwise add the new location
     let mut location_found = false;
@@ -1062,7 +1072,7 @@ async fn put_locations(
                 Some(destination.place_name.clone())
             } else {
                 destination.label.clone()
-            },            
+            },
             modified: chrono::Utc::now().timestamp_millis().to_string(),
             next: false,
         };
@@ -1077,7 +1087,11 @@ async fn put_locations(
         Ok(_) => Ok((StatusCode::OK, Json(json!({ "success": true }))).into_response()), // Respond with success
         Err(e) => {
             tracing::error!("Failed to update device locations. DB Error {}", e);
-            Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Failed to update location" }))).into_response())
+            Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Failed to update location" })),
+            )
+                .into_response())
         }
     }
 }
@@ -1094,9 +1108,9 @@ async fn get_locations(
         let device_model = if !user_model.superuser {
             DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?
         } else {
-            DM::find_device(&ctx.db,  &dongle_id).await?
+            DM::find_device(&ctx.db, &dongle_id).await?
         };
-       
+
         let locations: Value = device_model.locations.unwrap_or_default();
         return Ok((StatusCode::OK, Json(locations)).into_response());
     } else {
@@ -1116,7 +1130,8 @@ fn generate_turn_credentials(secret_key: &str) -> (String, String) {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs() + 3600;
+        .as_secs()
+        + 3600;
 
     let username = timestamp.to_string();
 
@@ -1128,13 +1143,11 @@ fn generate_turn_credentials(secret_key: &str) -> (String, String) {
     (username, credential)
 }
 
-async fn get_ice_servers(
-    _auth: MyJWT,
-) -> Result<Json<Vec<RTCIceServer>>, StatusCode> {
+async fn get_ice_servers(_auth: MyJWT) -> Result<Json<Vec<RTCIceServer>>, StatusCode> {
     tracing::info!("Getting ICE servers");
 
     let secret_key = env::var("TURN_SECRET_KEY").unwrap_or_else(|_| "default_secret".to_string());
-    
+
     let ice_servers = vec![
         RTCIceServer {
             urls: "stun:stun.l.google.com:19302".to_string(),
@@ -1155,7 +1168,6 @@ async fn get_ice_servers(
     Ok(Json(ice_servers))
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 struct DeleteLocation {
     id: String,
@@ -1175,7 +1187,7 @@ async fn delete_location(
         let device_model = if !user_model.superuser {
             DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?
         } else {
-            DM::find_device(&ctx.db,  &dongle_id).await?
+            DM::find_device(&ctx.db, &dongle_id).await?
         };
         active_device = device_model.into_active_model();
     } else {
@@ -1183,11 +1195,12 @@ async fn delete_location(
     }
 
     // Deserialize the current locations
-    let mut locations: Vec<SavedLocation> = if let Some(locations_json) = active_device.locations.as_ref() {
-        serde_json::from_value(locations_json.clone()).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let mut locations: Vec<SavedLocation> =
+        if let Some(locations_json) = active_device.locations.as_ref() {
+            serde_json::from_value(locations_json.clone()).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
     // Find and remove the location with the matching id
     let original_len: usize = locations.len();
@@ -1195,7 +1208,11 @@ async fn delete_location(
 
     if locations.len() == original_len {
         // If no location was removed, respond with an error
-        return Ok((StatusCode::NOT_FOUND, Json(json!({ "error": "Location not found" }))).into_response());
+        return Ok((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Location not found" })),
+        )
+            .into_response());
     }
 
     // Serialize the updated locations back to JSON
@@ -1205,12 +1222,18 @@ async fn delete_location(
     match active_device.update(&ctx.db).await {
         Ok(_) => Ok((StatusCode::OK, Json(json!({ "success": true }))).into_response()),
         Err(e) => {
-            tracing::error!("Failed to update device locations after deletion. DB Error {}", e);
-            Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Failed to delete location" }))).into_response())
+            tracing::error!(
+                "Failed to update device locations after deletion. DB Error {}",
+                e
+            );
+            Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Failed to delete location" })),
+            )
+                .into_response())
         }
     }
 }
-
 
 pub fn routes() -> Routes {
     Routes::new()
@@ -1228,7 +1251,10 @@ pub fn routes() -> Routes {
         .add(".4/:dongleId/upload_url/", get(get_upload_url))
         .add("/devices/:dongle_id/routes_segments", get(route_segment))
         .add("/devices/:dongle_id/routes", get(route_segment))
-        .add("/devices/:dongle_id/routes/preserved", get(preserved_routes))
+        .add(
+            "/devices/:dongle_id/routes/preserved",
+            get(preserved_routes),
+        )
         .add("/devices/:dongle_id/unpair", post(unpair))
         .add("/devices/:dongle_id/location", get(device_location))
         .add("/devices/:dongle_id/firehose", post(set_firehose))
@@ -1236,9 +1262,16 @@ pub fn routes() -> Routes {
         .add("/devices/:dongle_id/users", get(device_users))
         .add("/devices/:dongle_id", patch(update_device_alias))
         .add(".1/devices/:dongle_id", get(device_info))
-        .add("/navigation/:dongle_id/set_destination", post(set_destination))
-        .add("/navigation/:dongle_id/locations", get(get_locations).put(put_locations).delete(delete_location))
+        .add(
+            "/navigation/:dongle_id/set_destination",
+            post(set_destination),
+        )
+        .add(
+            "/navigation/:dongle_id/locations",
+            get(get_locations)
+                .put(put_locations)
+                .delete(delete_location),
+        )
         .add("/navigation/:dongle_id/next", get(get_next_destination))
         .add("/iceservers", get(get_ice_servers))
-        
-    }
+}

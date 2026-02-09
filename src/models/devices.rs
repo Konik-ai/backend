@@ -1,11 +1,10 @@
-use chrono::prelude::Utc;
-use sea_orm::entity::prelude::*;
-use sea_orm::{ActiveValue, TransactionTrait, QueryOrder};
-use loco_rs::prelude::*;
-pub use super::_entities::devices::{self, ActiveModel, Entity, Model as DM, Column};
+pub use super::_entities::devices::{self, ActiveModel, Column, Entity, Model as DM};
 use crate::controllers::v2::DeviceRegistrationParams;
+use chrono::prelude::Utc;
+use loco_rs::prelude::*;
+use sea_orm::entity::prelude::*;
+use sea_orm::{ActiveValue, QueryOrder, TransactionTrait};
 use sea_orm::{DbBackend, Statement};
-
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -102,18 +101,15 @@ impl DM {
                 device.into_active_model().insert(&txn).await?;
                 txn.commit().await?;
                 Ok(())
-            },
+            }
         }
     }
     /// Find all devices associated with a user
-    /// 
-    /// 
+    ///
+    ///
     /// Returns a list of devices associated with the user.
     /// Can be empty if the user has no devices
-    pub async fn find_user_devices(
-        db: &DatabaseConnection,
-        user_id: i32,
-    ) -> Vec<DM> {
+    pub async fn find_user_devices(db: &DatabaseConnection, user_id: i32) -> Vec<DM> {
         Entity::find()
             .filter(Column::OwnerId.eq(user_id))
             .order_by_desc(Column::Online)
@@ -126,7 +122,7 @@ impl DM {
     pub async fn find_user_device(
         db: &DatabaseConnection,
         user_id: i32,
-        dongle_id: &str
+        dongle_id: &str,
     ) -> Result<Option<DM>, DbErr> {
         Entity::find()
             .filter(Column::OwnerId.eq(user_id))
@@ -138,7 +134,7 @@ impl DM {
     pub async fn ensure_user_device(
         db: &DatabaseConnection,
         user_id: i32,
-        dongle_id: &str
+        dongle_id: &str,
     ) -> Result<DM, DbErr> {
         Entity::find()
             .filter(Column::OwnerId.eq(user_id))
@@ -148,9 +144,7 @@ impl DM {
             .ok_or_else(|| DbErr::RecordNotFound("Device not found for that owner".to_string()))
     }
 
-    pub async fn find_all_devices(
-        db: &DatabaseConnection,
-    ) -> Vec<DM> {
+    pub async fn find_all_devices(db: &DatabaseConnection) -> Vec<DM> {
         Entity::find()
             .order_by_desc(Column::Online)
             .order_by_desc(Column::LastAthenaPing)
@@ -159,10 +153,7 @@ impl DM {
             .expect("Database query failed")
     }
 
-    pub async fn find_device(
-        db: &DatabaseConnection,
-        dongle_id: &str,
-    ) -> ModelResult<DM> {
+    pub async fn find_device(db: &DatabaseConnection, dongle_id: &str) -> ModelResult<DM> {
         let device = Entity::find()
             .filter(Column::DongleId.eq(dongle_id))
             .one(db)
@@ -170,15 +161,13 @@ impl DM {
         device.ok_or_else(|| ModelError::EntityNotFound)
     }
 
-    pub async fn reset_online(
-        db: &DatabaseConnection,
-    ) -> Result<(), DbErr> {
+    pub async fn reset_online(db: &DatabaseConnection) -> Result<(), DbErr> {
         // Update all devices to set `Online` to `false`
         Entity::update_many()
             .col_expr(Column::Online, Expr::value(false))
             .exec(db)
             .await?;
-            
+
         Ok(())
     }
 

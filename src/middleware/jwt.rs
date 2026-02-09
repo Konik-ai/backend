@@ -69,7 +69,12 @@ impl JWT {
         let exp = (get_current_timestamp() + expiration) as usize;
         let nbf = get_current_timestamp() as usize;
         let iat = nbf.clone();
-        let claims = UserClaims { identity, exp, nbf, iat };
+        let claims = UserClaims {
+            identity,
+            exp,
+            nbf,
+            iat,
+        };
 
         let token = encode(
             &Header::new(self.algorithm),
@@ -115,9 +120,14 @@ impl JWT {
         let mut insecure_validation = Validation::new(self.algorithm);
         // Accept any signing algorithm when parsing without signature verification
         insecure_validation.algorithms = vec![
-            Algorithm::HS256, Algorithm::HS384, Algorithm::HS512,
-            Algorithm::RS256, Algorithm::RS384, Algorithm::RS512,
-            Algorithm::ES256, Algorithm::ES384,
+            Algorithm::HS256,
+            Algorithm::HS384,
+            Algorithm::HS512,
+            Algorithm::RS256,
+            Algorithm::RS384,
+            Algorithm::RS512,
+            Algorithm::ES256,
+            Algorithm::ES384,
         ];
         insecure_validation.insecure_disable_signature_validation();
         insecure_validation.leeway = 30;
@@ -125,7 +135,7 @@ impl JWT {
         decode::<UserClaims>(
             token,
             &DecodingKey::from_secret(&"no_secrete".as_bytes()),
-            &insecure_validation
+            &insecure_validation,
         )
     }
 }

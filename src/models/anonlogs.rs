@@ -1,8 +1,8 @@
-use sea_orm::entity::prelude::*;
 use super::_entities::anonlogs::{ActiveModel, Model};
-use loco_rs::{prelude::*};
+use loco_rs::prelude::*;
+use sea_orm::entity::prelude::*;
 
-use chrono::prelude::{Utc};
+use chrono::prelude::Utc;
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
     // extend activemodel below (keep comment for generators)
@@ -24,17 +24,14 @@ impl ActiveModelBehavior for ActiveModel {
 }
 
 impl super::_entities::anonlogs::Model {
-
-    pub async fn add_anonlog(
-        db: &DatabaseConnection,
-        url: &str,
-    ) -> ModelResult<Model> {
+    pub async fn add_anonlog(db: &DatabaseConnection, url: &str) -> ModelResult<Model> {
         let txn: sea_orm::DatabaseTransaction = db.begin().await?;
-        let log: Model = ActiveModel{
+        let log: Model = ActiveModel {
             url: ActiveValue::Set(url.into()),
             ..Default::default()
         }
-        .insert(&txn).await?;
+        .insert(&txn)
+        .await?;
         txn.commit().await?;
         Ok(log)
     }

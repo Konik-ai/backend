@@ -1,12 +1,12 @@
-use std::f64::consts::PI;
-use std::hash::Hasher;
-use std::hash::Hash;
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 use bytes::Bytes;
-use std::path::Path;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::f64::consts::PI;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::path::Path;
 use tracing;
 
 #[derive(Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let delta_lambda = (lon2 - lon1) * PI / 180.0;
 
     let a = (delta_phi / 2.0).sin().powi(2)
-          + phi1.cos() * phi2.cos() * (delta_lambda / 2.0).sin().powi(2);
+        + phi1.cos() * phi2.cos() * (delta_lambda / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
     r * c // Distance in meters
@@ -45,8 +45,6 @@ pub fn increment_param_value(param_name: &str, value: &str) {
         .and_modify(|count| *count += 1)
         .or_insert(1);
 }
-
-
 
 pub async fn persist_param_value_counts(
     storage: &loco_rs::storage::Storage,
@@ -71,7 +69,9 @@ pub async fn persist_param_value_counts(
             let path = Path::new(&formatted_path);
             // Try to load existing counts
             let mut merged = if let Ok(bytes) = storage.download::<Vec<u8>>(path).await {
-                serde_json::from_slice::<ValueCounts>(&bytes).unwrap_or(ValueCounts(HashMap::new())).0
+                serde_json::from_slice::<ValueCounts>(&bytes)
+                    .unwrap_or(ValueCounts(HashMap::new()))
+                    .0
             } else {
                 tracing::info!("No existing counts for '{}', creating new file", param_name);
                 HashMap::new()
@@ -103,12 +103,7 @@ pub async fn persist_param_value_counts(
     Ok(())
 }
 
-
-pub fn save_device_param(
-    device_id: &str,
-    param_name: &str,
-    value: &str,
-) {
+pub fn save_device_param(device_id: &str, param_name: &str, value: &str) {
     let device_map = DEVICE_PARAMS
         .entry(device_id.to_string())
         .or_insert_with(DashMap::new);
@@ -118,10 +113,10 @@ pub fn save_device_param(
 pub async fn persist_device_params(
     storage: &loco_rs::storage::Storage,
 ) -> loco_rs::storage::StorageResult<()> {
+    use bytes::Bytes;
     use futures::future::try_join_all;
     use std::collections::HashMap;
     use std::path::Path;
-    use bytes::Bytes;
 
     let mut tasks = Vec::new();
     for entry in DEVICE_PARAMS.iter() {

@@ -1,58 +1,53 @@
 #![allow(clippy::unused_async)]
 use async_compression::tokio::bufread;
+use axum::{
+    extract::{Query, State},
+    Extension,
+};
 use loco_rs::prelude::*;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use axum::{
-    extract::{Query, State}, Extension,
-};
 use sysinfo::Users;
 use tokio_util::io::StreamReader;
 extern crate url;
-use std::{collections::HashMap, env, io::Cursor};
-use axum::response::{Redirect, IntoResponse};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Redirect};
+use std::{collections::HashMap, env, io::Cursor};
 
 use crate::{
-    enforce_ownership_rule,
-    cereal::log_capnp::event as LogEvent, 
-    common::{mkv_helpers, re::*}, 
-    models::{
-        users::UM,
-        routes::RM,
-        devices::DM,
-        bootlogs::BM,
-        segments::SM,
-    },
-    views,
+    cereal::log_capnp::event as LogEvent,
+    common::{mkv_helpers, re::*},
     controllers::v2::get_auth,
+    enforce_ownership_rule,
+    models::{bootlogs::BM, devices::DM, routes::RM, segments::SM, users::UM},
+    views,
 };
 
 #[derive(Deserialize)]
 pub struct OneBox {
-    onebox: Option<String>
+    onebox: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct UsersTemplate {
     pub defined: bool,
-    pub users: Vec<UM>
+    pub users: Vec<UM>,
 }
 #[derive(Serialize)]
 pub struct RoutesTemplate {
     pub defined: bool,
-    pub routes: Vec<RM>
+    pub routes: Vec<RM>,
 }
 #[derive(Serialize)]
 pub struct DevicesTemplate {
     pub defined: bool,
-    pub devices: Vec<DM>
+    pub devices: Vec<DM>,
 }
 #[derive(Serialize)]
 pub struct BootlogsTemplate {
     pub defined: bool,
-    pub bootlogs: Vec<BM>
+    pub bootlogs: Vec<BM>,
 }
 #[derive(Serialize)]
 pub struct SegmentsTemplate {
@@ -66,7 +61,6 @@ pub struct CloudlogsTemplate {
     // Nested summary: branch -> (map: module -> count of logs)
     pub cloudlogs: std::collections::HashMap<String, std::collections::HashMap<String, usize>>,
 }
-
 
 #[derive(Serialize, Default)]
 pub struct MasterTemplate {
@@ -90,7 +84,6 @@ pub async fn onebox_handler(
     Query(params): Query<OneBox>,
     Extension(manager): Extension<std::sync::Arc<super::ws::ConnectionManager>>,
 ) -> Result<impl IntoResponse> {
-    
     let user_model = match auth.user_model {
         Some(user_model) => user_model,
         None => return unauthorized("Couldn't find user"), // Error handling for when auth.user_model is None. Should never get here
@@ -100,16 +93,13 @@ pub async fn onebox_handler(
         None => user_model.name.clone(),
     };
     use crate::common::re::*;
-    let route_match_string = format!(
-        r"^({DONGLE_ID})([_|/|]?({ROUTE_NAME}))?"
-    );
+    let route_match_string = format!(r"^({DONGLE_ID})([_|/|]?({ROUTE_NAME}))?");
     // Regex to match a complete canonical route name
     let re = regex::Regex::new(&route_match_string).unwrap();
 
     let mut canonical_route_name: Option<String> = None;
     let mut dongle_id: String;
     let mut timestamp: Option<String> = None;
-
 
     // Check for route or dongle ID
     if let Some(caps) = re.captures(&onebox) {
@@ -126,7 +116,11 @@ pub async fn onebox_handler(
 
     let mut master_template = MasterTemplate {
         dongle_id: dongle_id.clone(),
-        device_online: if !dongle_id.is_empty() {Some( manager.is_device_online(&dongle_id).await) } else { None },
+        device_online: if !dongle_id.is_empty() {
+            Some(manager.is_device_online(&dongle_id).await)
+        } else {
+            None
+        },
         onebox: onebox,
         api_host: api_endpoint,
         ws_host: ws_endpoint,
@@ -135,13 +129,14 @@ pub async fn onebox_handler(
     if user_model.superuser {
         master_template.users = Some(UsersTemplate {
             defined: true,
-            users: UM::find_all_users(&ctx.db).await
+            users: UM::find_all_users(&ctx.db).await,
         });
     } else {
         master_template.users = UsersTemplate {
             defined: false,
-            users: vec![]
-        }.into();
+            users: vec![],
+        }
+        .into();
     }
 
     // Parse cloudlogs from the connection manager's cache and add them to the template if available.
@@ -154,23 +149,22 @@ pub async fn onebox_handler(
             let cloudlog_cache = manager.cloudlog_cache.read().await;
             cloudlog_cache.get(&dongle_id).cloned()
         };
-    
+
         // Build a summary: for each branch and module, count the number of logs.
-        let summary: HashMap<String, HashMap<String, usize>> =
-            if let Some(nested) = nested_logs {
-                let mut map = HashMap::new();
-                for (branch, modules) in nested {
-                    let mut module_map = HashMap::new();
-                    for (module, logs_array) in modules {
-                        module_map.insert(module, logs_array.len());
-                    }
-                    map.insert(branch, module_map);
+        let summary: HashMap<String, HashMap<String, usize>> = if let Some(nested) = nested_logs {
+            let mut map = HashMap::new();
+            for (branch, modules) in nested {
+                let mut module_map = HashMap::new();
+                for (module, logs_array) in modules {
+                    module_map.insert(module, logs_array.len());
                 }
-                map
-            } else {
-                HashMap::new()
-            };
-    
+                map.insert(branch, module_map);
+            }
+            map
+        } else {
+            HashMap::new()
+        };
+
         master_template.cloudlogs = Some(CloudlogsTemplate {
             defined: !summary.is_empty(),
             cloudlogs: summary,
@@ -183,72 +177,67 @@ pub async fn onebox_handler(
             segment_models.sort_by(|a, b| a.number.cmp(&b.number));
         }
 
-        master_template.segments = segment_models.map(|segments| SegmentsTemplate { 
+        master_template.segments = segment_models.map(|segments| SegmentsTemplate {
             defined: true,
-            segments 
+            segments,
         });
-    
+
         views::route::admin_route(v, master_template)
     } else if dongle_id != "" {
-        master_template.routes = Some(RoutesTemplate { 
-            defined: true, 
-            routes: RM::find_device_routes(&ctx.db, &dongle_id).await?, 
+        master_template.routes = Some(RoutesTemplate {
+            defined: true,
+            routes: RM::find_device_routes(&ctx.db, &dongle_id).await?,
         });
         master_template.devices = Some(DevicesTemplate {
             defined: true,
-            devices: DM::find_user_devices(&ctx.db, user_model.id).await,  
+            devices: DM::find_user_devices(&ctx.db, user_model.id).await,
         });
         master_template.bootlogs = Some(BootlogsTemplate {
             defined: true,
             bootlogs: BM::find_device_bootlogs(&ctx.db, &dongle_id).await?,
         });
         views::route::admin_route(v, master_template)
-
     } else {
         if user_model.superuser {
             master_template.devices = Some(DevicesTemplate {
                 defined: true,
-                devices: DM::find_all_devices(&ctx.db).await
+                devices: DM::find_all_devices(&ctx.db).await,
             });
         } else {
             master_template.devices = Some(DevicesTemplate {
                 defined: true,
-                devices: DM::find_user_devices(&ctx.db, user_model.id).await
+                devices: DM::find_user_devices(&ctx.db, user_model.id).await,
             });
-
         };
         // Fallback response
         views::route::admin_route(v, master_template)
     }
 }
 
-
 // A function that uses capnp to parse the qlog file and return the parsed data
 #[derive(Deserialize)]
 pub struct UlogQuery {
     pub url: String,
-    pub event: Option<String>
+    pub event: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct UlogText {
-   pub text: String,
-   pub events: Vec<String>,
-   pub selected_event: Option<String>,
+    pub text: String,
+    pub events: Vec<String>,
+    pub selected_event: Option<String>,
 }
-
 
 pub async fn qlog_render(
     auth: crate::middleware::auth::MyJWT,
     ViewEngine(v): ViewEngine<TeraView>,
     State(ctx): State<AppContext>,
     Extension(client): Extension<Client>,
-    Query(params): Query<UlogQuery>
+    Query(params): Query<UlogQuery>,
 ) -> Result<impl IntoResponse> {
     // Validate the URL
-    let segment_file_regex_string = format!(
-        r"(({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$))"
-    );
+    let segment_file_regex_string =
+        format!(r"(({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$))");
     let segment_file_regex = regex::Regex::new(&segment_file_regex_string).unwrap();
     let response = if let Some(captures) = segment_file_regex.captures(&params.url) {
         let dongle_id = captures[2].to_string();
@@ -267,17 +256,20 @@ pub async fn qlog_render(
 
         // Always use mkv_helpers::get_mkv_file_url with the second part (lookup key)
         let internal_file_url = mkv_helpers::get_mkv_file_url(&captures[1]);
-        
+
         // Proceed with the request using the `internal_file_url`
         let request = client.get(&internal_file_url);
-    
+
         // Get the data and save it as a string to pass to admin_segment_ulog
         match request.send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     response
                 } else {
-                    return Err(Error::Message(format!("Failed to get file: {}", response.status())));
+                    return Err(Error::Message(format!(
+                        "Failed to get file: {}",
+                        response.status()
+                    )));
                 }
             }
             Err(e) => {
@@ -287,34 +279,37 @@ pub async fn qlog_render(
     } else {
         return Err(Error::Message("Invalid file name".to_string()));
     };
-                
+
     // Decompress the file
     use futures_util::TryStreamExt;
     let bytes_stream = response
         .bytes_stream()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-    
+
     let stream_reader = StreamReader::new(bytes_stream);
-    
+
     let file_name = params.url.clone();
-    let mut decoder: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> = if file_name.ends_with(".bz2") {
-        Box::pin(bufread::BzDecoder::new(stream_reader))
-    } else if file_name.ends_with(".zst") {
-        Box::pin(bufread::ZstdDecoder::new(stream_reader))
-    } else {
-        return Err(Error::Message("Invalid file type. Must end with .bz2 or .zst".to_string()));
-    };
-    
+    let mut decoder: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> =
+        if file_name.ends_with(".bz2") {
+            Box::pin(bufread::BzDecoder::new(stream_reader))
+        } else if file_name.ends_with(".zst") {
+            Box::pin(bufread::ZstdDecoder::new(stream_reader))
+        } else {
+            return Err(Error::Message(
+                "Invalid file type. Must end with .bz2 or .zst".to_string(),
+            ));
+        };
+
     let mut decompressed_data = Vec::new();
     match tokio::io::AsyncReadExt::read_to_end(&mut decoder, &mut decompressed_data).await {
         Ok(_) => (),
-        Err(e) => return Err(Error::Message(e.to_string()))
+        Err(e) => return Err(Error::Message(e.to_string())),
     };
 
     let mut cursor = Cursor::new(decompressed_data);
     let mut unlog_data = Vec::new();
     let reader_options = capnp::message::ReaderOptions::default();
-    
+
     // Create a set to store event names
     let mut event_types = std::collections::HashSet::new();
 
@@ -323,11 +318,11 @@ pub async fn qlog_render(
         let event = match message_reader.get_root::<LogEvent::Reader>() {
             Ok(event) => event,
             Err(e) => {
-                tracing::warn!("Failed to get root: {:?}", e); 
+                tracing::warn!("Failed to get root: {:?}", e);
                 continue;
-            }, 
+            }
         };
-        
+
         match event.which() {
             Err(_) => {
                 continue;
@@ -345,34 +340,41 @@ pub async fn qlog_render(
             }
         }
     }
-    
+
     // Always return the list of events
     let mut event_list: Vec<String> = event_types.into_iter().collect();
     event_list.sort();
 
     let data = if let Some(_) = params.event {
-        String::from_utf8(unlog_data).unwrap_or_else(|_| "Failed to convert log data to string".to_string())
+        String::from_utf8(unlog_data)
+            .unwrap_or_else(|_| "Failed to convert log data to string".to_string())
     } else if !event_list.is_empty() {
         format!("Available event types:\n{}", event_list.join("\n"))
     } else {
         "No events found in log".to_string()
     };
 
-    Ok(views::route::admin_segment_ulog(v, UlogText {
-        text: data,
-        events: event_list,
-        selected_event: params.event.clone(),
-    }))
+    Ok(views::route::admin_segment_ulog(
+        v,
+        UlogText {
+            text: data,
+            events: event_list,
+            selected_event: params.event.clone(),
+        },
+    ))
 }
 
 pub async fn cloudlogs_view(
     ViewEngine(v): ViewEngine<TeraView>,
     State(_ctx): State<AppContext>,
 ) -> Result<impl IntoResponse> {
-    views::route::admin_cloudlogs(v, CloudlogsTemplate {
-        defined: true,
-        cloudlogs: HashMap::new(),
-    })
+    views::route::admin_cloudlogs(
+        v,
+        CloudlogsTemplate {
+            defined: true,
+            cloudlogs: HashMap::new(),
+        },
+    )
 }
 
 pub async fn login(
@@ -380,10 +382,10 @@ pub async fn login(
     State(_ctx): State<AppContext>,
 ) -> Result<impl IntoResponse> {
     views::auth::login(
-        v, 
-        crate::views::auth::LoginTemplate { 
-            api_host: env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set")
-        }
+        v,
+        crate::views::auth::LoginTemplate {
+            api_host: env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
+        },
     )
 }
 
@@ -392,12 +394,11 @@ pub async fn logout() -> impl IntoResponse {
     // Expire the jwt cookie
     headers.insert(
         header::SET_COOKIE,
-        HeaderValue::from_static("jwt=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Lax;")
+        HeaderValue::from_static("jwt=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Lax;"),
     );
     // Redirect to login page
     (StatusCode::FOUND, headers, Redirect::to("/login"))
 }
-
 
 pub fn routes() -> Routes {
     Routes::new()

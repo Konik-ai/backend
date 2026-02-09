@@ -1,20 +1,15 @@
-use std::collections::BTreeMap;
-use reqwest::Client;
+use chrono::{Duration, NaiveDateTime, ParseError, Utc};
+use loco_rs::prelude::*;
 use regex::Regex;
+use reqwest::Client;
 use serde_json::from_str;
 use serde_json::Value;
-use loco_rs::prelude::*;
-use chrono::{Utc, Duration, NaiveDateTime, ParseError};
-use sysinfo::Disks;
+use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
+use sysinfo::Disks;
 
-use crate::{models::_entities::{
-    segments,
-    },
-    common::mkv_helpers,
-    common::re::*,
-};
+use crate::{common::mkv_helpers, common::re::*, models::_entities::segments};
 
 fn parse_timestamp(timestamp: &str) -> Result<NaiveDateTime, ParseError> {
     NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d--%H-%M-%S")
@@ -27,9 +22,7 @@ fn get_available_storage() -> u64 {
     // Filter to only include the RAID 5 disk by checking the device name or mount point
     disks
         .iter()
-        .filter(|disk| {
-            disk.mount_point() == Path::new(&mount_point)
-        })
+        .filter(|disk| disk.mount_point() == Path::new(&mount_point))
         .map(|disk| disk.available_space())
         .sum()
 }
@@ -44,10 +37,9 @@ impl Task for Deleter {
     }
     async fn run(&self, ctx: &AppContext, _vars: &task::Vars) -> Result<()> {
         println!("Task Deleter generated");
-        
-        let segment_file_regex_string = format!(
-            r"^({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$)"
-        );
+
+        let segment_file_regex_string =
+            format!(r"^({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$)");
         let re = Regex::new(&segment_file_regex_string).unwrap();
 
         let client = Client::new();
@@ -65,19 +57,22 @@ impl Task for Deleter {
 
         // Extract keys from the JSON object
         let keys = json["keys"].as_array().unwrap(); // Safely extract as an array
-        // TODO: Refactor to not load the whole response in ram at once as it could get large.
+                                                     // TODO: Refactor to not load the whole response in ram at once as it could get large.
 
         let mut retention_minutes = 356 * 24 * 60; // Start with 356 days in minutes
         let required_free_space = 2000 * 1024 * 1024 * 1024; // 2000 GB
 
         loop {
             let available_storage = get_available_storage();
-            
+
             if available_storage >= required_free_space {
                 tracing::info!("Sufficient storage available: {available_storage} bytes");
                 break;
             } else {
-                tracing::info!("Insufficient storage available: {} GB", available_storage/(1024*1024*1024));
+                tracing::info!(
+                    "Insufficient storage available: {} GB",
+                    available_storage / (1024 * 1024 * 1024)
+                );
             }
 
             let now: NaiveDateTime = Utc::now().naive_utc();
@@ -93,13 +88,19 @@ impl Task for Deleter {
                         let timestamp = &caps[2];
                         let segment = &caps[3];
                         let _file_type = &caps[4];
-                        match segments::Model::find_one(&ctx.db, &format!("{dongle_id}|{timestamp}--{segment}")).await {
+                        match segments::Model::find_one(
+                            &ctx.db,
+                            &format!("{dongle_id}|{timestamp}--{segment}"),
+                        )
+                        .await
+                        {
                             Ok(segment) => {
                                 let deleted = false;
-                                if segment.updated_at <= older_than && !deleted { // Fallback to updated_at
+                                if segment.updated_at <= older_than && !deleted {
+                                    // Fallback to updated_at
                                     delete_file(&client, &file_name).await;
                                 }
-                            },
+                            }
                             Err(_e) => {
                                 tracing::error!("No segment found for file: {file_name}. ");
                                 if let Ok(derived_dt) = parse_timestamp(timestamp) {
@@ -107,7 +108,7 @@ impl Task for Deleter {
                                         delete_file(&client, &file_name).await;
                                     }
                                 };
-                            }   
+                            }
                         }
                     }
                     None => {
@@ -130,5 +131,9 @@ impl Task for Deleter {
 
 async fn delete_file(client: &Client, file_name: &str) {
     tracing::info!("Deleting file: {file_name}");
-    client.delete(&mkv_helpers::get_mkv_file_url(file_name)).send().await.unwrap();
+    client
+        .delete(&mkv_helpers::get_mkv_file_url(file_name))
+        .send()
+        .await
+        .unwrap();
 }

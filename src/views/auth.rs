@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-
 use loco_rs::prelude::*;
-
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoginResponse {
@@ -11,7 +9,6 @@ pub struct LoginResponse {
     pub name: String,
     pub is_verified: bool,
 }
-
 
 #[derive(Serialize)]
 pub(crate) struct LoginTemplate {

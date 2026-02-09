@@ -1,10 +1,10 @@
 pub mod app;
+pub mod cereal;
+pub mod common;
 pub mod controllers;
 pub mod initializers;
+pub mod middleware;
 pub mod models;
 pub mod tasks;
 pub mod views;
 pub mod workers;
-pub mod common;
-pub mod cereal;
-pub mod middleware;

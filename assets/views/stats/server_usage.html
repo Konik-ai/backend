@@ -261,6 +261,17 @@
             font-size: 14px;
             color: var(--text-color);
         }
+
+        .live-status {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(156, 163, 175, 0.15);
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body>
@@ -309,6 +320,33 @@
                 </div>
             </div>
 
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>
+                    Current Uploads
+                    <span class="live-status" id="uploads-status">Connecting...</span>
+                </h3>
+                <div class="progress-text" id="uploads-summary">...</div>
+                <table class="disk-table" style="margin-top: 12px;">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Dongle</th>
+                            <th>File</th>
+                            <th>Uploaded</th>
+                            <th>Speed</th>
+                            <th>Age</th>
+                        </tr>
+                    </thead>
+                    <tbody id="uploads-table-body">
+                        <tr>
+                            <td colspan="6" style="color: #9ca3af;">Connecting...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="stats-grid">
@@ -451,7 +489,7 @@
                         milesChart.data.datasets[0].data = cumulativeMilesData;
                         milesChart.data.datasets[0].label = 'Total Miles';
                     }
-                    milesChart.update();
+                milesChart.update();
                 });
             }
         }
@@ -510,6 +548,97 @@
                 });
             }
         }
+
+        // Live uploads feed (WebSocket)
+        (function() {
+            const statusEl = document.getElementById('uploads-status');
+            const summaryEl = document.getElementById('uploads-summary');
+            const tbodyEl = document.getElementById('uploads-table-body');
+            if (!statusEl || !summaryEl || !tbodyEl) return;
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function mb(value) {
+                return (value / (1024 * 1024)).toFixed(2);
+            }
+
+            function wsUrl() {
+                const proto = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+                return proto + '//' + location.host + '/stats/ws/uploads';
+            }
+
+            let ws;
+            let retryMs = 1000;
+
+            function connect() {
+                statusEl.textContent = 'Connecting...';
+                ws = new WebSocket(wsUrl());
+
+                ws.onopen = () => {
+                    statusEl.textContent = 'Live';
+                    retryMs = 1000;
+                };
+
+                ws.onclose = () => {
+                    statusEl.textContent = 'Disconnected (retrying...)';
+                    setTimeout(connect, retryMs);
+                    retryMs = Math.min(8000, retryMs * 2);
+                };
+
+                ws.onmessage = (event) => {
+                    let msg;
+                    try { msg = JSON.parse(event.data); } catch (_e) { return; }
+                    if (!msg || !Array.isArray(msg.uploads)) return;
+                    render(msg);
+                };
+            }
+
+            function render(msg) {
+                const uploads = msg.uploads || [];
+                const totalSpeedBps = (typeof msg.total_speed_bps === 'number')
+                    ? msg.total_speed_bps
+                    : uploads.reduce((acc, u) => acc + (u.speed_bps || 0), 0);
+
+                summaryEl.textContent = `${uploads.length} active, ${mb(totalSpeedBps)} MB/s total`;
+
+                tbodyEl.innerHTML = '';
+                if (uploads.length === 0) {
+                    tbodyEl.innerHTML = '<tr><td colspan="6" style="color:#9ca3af;">No active uploads</td></tr>';
+                    return;
+                }
+
+                for (const u of uploads) {
+                    const kind = u.kind || '';
+                    const dongle = u.dongle_id || '';
+                    const file = u.file_name ? u.file_name : '(hidden)';
+                    const uploadedMb = mb(u.bytes_received || 0);
+                    const speedMb = mb(u.speed_bps || 0);
+                    const ageSec = (typeof u.started_at_ms === 'number')
+                        ? Math.max(0, Math.round((Date.now() - u.started_at_ms) / 1000))
+                        : '';
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${escapeHtml(kind)}</td>
+                        <td class="bytes">${escapeHtml(dongle)}</td>
+                        <td>${escapeHtml(file)}</td>
+                        <td class="bytes">${uploadedMb} MB</td>
+                        <td class="bytes">${speedMb} MB/s</td>
+                        <td>${escapeHtml(ageSec)}s</td>
+                    `;
+                    tbodyEl.appendChild(row);
+                }
+            }
+
+            connect();
+        })();
     </script>
 </body>
 </html>

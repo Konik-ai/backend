@@ -11,7 +11,7 @@ pub struct Model {
     pub git_remote: Option<String>,
     pub version: Option<String>,
     pub git_branch: Option<String>,
-    
+
     pub platform: String,
     pub public: bool,
     pub devicetype: Option<i16>,

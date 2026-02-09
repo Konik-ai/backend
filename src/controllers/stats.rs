@@ -1,19 +1,18 @@
 #![allow(clippy::unused_async)]
-use loco_rs::prelude::*;
-use serde::{Deserialize, Serialize};
-use sysinfo::{
-    Disks
-};
-use crate::{
-    models::{
-        devices::DM,
-        routes::RM,
-    }
-};
-use crate::{
-    views
+use crate::common::upload_tracker::UploadTracker;
+use crate::models::{devices::DM, routes::RM};
+use crate::views;
+use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    Extension,
 };
 use chrono::TimeZone;
+use futures_util::{SinkExt, StreamExt};
+use loco_rs::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use sysinfo::Disks;
+use tokio::time::{self, Duration};
 #[derive(Serialize, Deserialize)]
 pub struct TimeSeriesPoint {
     pub date: String,
@@ -71,7 +70,6 @@ pub struct ServerUsage {
     pub daily_devices_over_time: Vec<TimeSeriesPoint>,
 }
 
-
 async fn get_disk_usage() -> Vec<DiskSpace> {
     let disks = Disks::new_with_refreshed_list();
     disks
@@ -93,10 +91,14 @@ pub async fn get_server_usage(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as u64;
-    let one_day_ago_millis = utc_time_now_millis - std::time::Duration::from_secs(24 * 60 * 60).as_secs() as u64;
-    let one_week_ago_millis = utc_time_now_millis - std::time::Duration::from_secs(7 * 24 * 60 * 60).as_secs() as u64;
-    let one_month_ago_millis = utc_time_now_millis - std::time::Duration::from_secs(30 * 24 * 60 * 60).as_secs() as u64;
-    let three_months_ago_millis = utc_time_now_millis - std::time::Duration::from_secs(90 * 24 * 60 * 60).as_secs() as u64;
+    let one_day_ago_millis =
+        utc_time_now_millis - std::time::Duration::from_secs(24 * 60 * 60).as_secs() as u64;
+    let one_week_ago_millis =
+        utc_time_now_millis - std::time::Duration::from_secs(7 * 24 * 60 * 60).as_secs() as u64;
+    let one_month_ago_millis =
+        utc_time_now_millis - std::time::Duration::from_secs(30 * 24 * 60 * 60).as_secs() as u64;
+    let three_months_ago_millis =
+        utc_time_now_millis - std::time::Duration::from_secs(90 * 24 * 60 * 60).as_secs() as u64;
 
     // All-time daily miles (sum of route length per UTC day)
     let daily_miles_rows = RM::daily_miles_all_time(&ctx.db).await.unwrap_or_default();
@@ -109,19 +111,28 @@ pub async fn get_server_usage(
                 .unwrap_or_else(|| chrono::Utc.timestamp_millis_opt(0).unwrap())
                 .format("%Y-%m-%d")
                 .to_string();
-            TimeSeriesPoint { date, miles: *miles as i64 }
+            TimeSeriesPoint {
+                date,
+                miles: *miles as i64,
+            }
         })
         .collect();
-    let mut cumulative_miles_points: Vec<TimeSeriesPoint> = Vec::with_capacity(daily_miles_points.len());
+    let mut cumulative_miles_points: Vec<TimeSeriesPoint> =
+        Vec::with_capacity(daily_miles_points.len());
     let mut acc: i64 = 0;
     for p in &daily_miles_points {
         acc += p.miles;
-        cumulative_miles_points.push(TimeSeriesPoint { date: p.date.clone(), miles: acc });
+        cumulative_miles_points.push(TimeSeriesPoint {
+            date: p.date.clone(),
+            miles: acc,
+        });
     }
 
     // Fetch all-time device series
     // registrations by created_at and activity by last_athena_ping
-    let (daily_reg_rows, daily_active_rows) = DM::daily_devices_all_time(&ctx.db).await.unwrap_or_default();
+    let (daily_reg_rows, daily_active_rows) = DM::daily_devices_all_time(&ctx.db)
+        .await
+        .unwrap_or_default();
     // We'll display "devices over time" as cumulative registrations, and daily_devices as daily actives
     let daily_devices_points: Vec<TimeSeriesPoint> = daily_active_rows
         .iter()
@@ -132,10 +143,14 @@ pub async fn get_server_usage(
                 .unwrap_or_else(|| chrono::Utc.timestamp_millis_opt(0).unwrap())
                 .format("%Y-%m-%d")
                 .to_string();
-            TimeSeriesPoint { date, miles: *cnt as i64 }
+            TimeSeriesPoint {
+                date,
+                miles: *cnt as i64,
+            }
         })
         .collect();
-    let mut cumulative_devices_points: Vec<TimeSeriesPoint> = Vec::with_capacity(daily_reg_rows.len());
+    let mut cumulative_devices_points: Vec<TimeSeriesPoint> =
+        Vec::with_capacity(daily_reg_rows.len());
     let mut acc_dev: i64 = 0;
     for (day_ms, cnt) in &daily_reg_rows {
         acc_dev += *cnt as i64;
@@ -145,29 +160,54 @@ pub async fn get_server_usage(
             .unwrap_or_else(|| chrono::Utc.timestamp_millis_opt(0).unwrap())
             .format("%Y-%m-%d")
             .to_string();
-        cumulative_devices_points.push(TimeSeriesPoint { date, miles: acc_dev });
+        cumulative_devices_points.push(TimeSeriesPoint {
+            date,
+            miles: acc_dev,
+        });
     }
-    
-    
+
     views::route::server_usage(
         view,
         ServerUsage {
             time: chrono::Utc::now().to_rfc3339(),
-            disk_usage:  get_disk_usage().await,
+            disk_usage: get_disk_usage().await,
             devices: Devices {
-                total: DM::get_registered_devices(&ctx.db,None, None, None).await?,
-                online: DM::get_registered_devices(&ctx.db,Some(true), None, None).await?,
+                total: DM::get_registered_devices(&ctx.db, None, None, None).await?,
+                online: DM::get_registered_devices(&ctx.db, Some(true), None, None).await?,
                 active: Active {
-                    daily: DM::get_registered_devices(&ctx.db,None, None, Some(one_day_ago_millis)).await?,
-                    weekly: DM::get_registered_devices(&ctx.db,None, None, Some(one_week_ago_millis)).await?,
-                    monthly: DM::get_registered_devices(&ctx.db,None, None, Some(one_month_ago_millis)).await?,
-                    quarterly: DM::get_registered_devices(&ctx.db,None, None, Some(three_months_ago_millis)).await?
-
+                    daily: DM::get_registered_devices(
+                        &ctx.db,
+                        None,
+                        None,
+                        Some(one_day_ago_millis),
+                    )
+                    .await?,
+                    weekly: DM::get_registered_devices(
+                        &ctx.db,
+                        None,
+                        None,
+                        Some(one_week_ago_millis),
+                    )
+                    .await?,
+                    monthly: DM::get_registered_devices(
+                        &ctx.db,
+                        None,
+                        None,
+                        Some(one_month_ago_millis),
+                    )
+                    .await?,
+                    quarterly: DM::get_registered_devices(
+                        &ctx.db,
+                        None,
+                        None,
+                        Some(three_months_ago_millis),
+                    )
+                    .await?,
                 },
             },
-            drive_stats: DriveStats { 
-                total_miles: RM::get_miles(&ctx.db).await? as i32, 
-                total_drives: RM::get_drive_count(&ctx.db).await?
+            drive_stats: DriveStats {
+                total_miles: RM::get_miles(&ctx.db).await? as i32,
+                total_drives: RM::get_drive_count(&ctx.db).await?,
             },
             // Provide time series for charts
             miles_over_time: cumulative_miles_points,
@@ -178,8 +218,71 @@ pub async fn get_server_usage(
     )
 }
 
+async fn handle_uploads_socket(
+    socket: WebSocket,
+    upload_tracker: Arc<UploadTracker>,
+    is_superuser: bool,
+) {
+    let (mut sender, mut receiver) = socket.split();
+
+    // tokio::time::interval ticks immediately; discard the first one so we don't double-send.
+    let mut interval = time::interval(Duration::from_secs(1));
+    interval.tick().await;
+
+    let initial = upload_tracker.snapshot_message(is_superuser);
+    if let Ok(json) = serde_json::to_string(&initial) {
+        if sender.send(Message::Text(json)).await.is_err() {
+            return;
+        }
+    }
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let snapshot = upload_tracker.snapshot_message(is_superuser);
+                let Ok(json) = serde_json::to_string(&snapshot) else { continue; };
+                if sender.send(Message::Text(json)).await.is_err() {
+                    break;
+                }
+            }
+            incoming = receiver.next() => {
+                match incoming {
+                    Some(Ok(Message::Ping(payload))) => {
+                        let _ = sender.send(Message::Pong(payload)).await;
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        break;
+                    }
+                    Some(Ok(_)) => {}
+                    Some(Err(e)) => {
+                        tracing::debug!("stats uploads ws recv error: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub async fn ws_uploads(
+    auth: crate::middleware::auth::MyJWT,
+    ws: WebSocketUpgrade,
+    Extension(upload_tracker): Extension<Arc<UploadTracker>>,
+) -> impl IntoResponse {
+    let is_superuser = auth
+        .user_model
+        .as_ref()
+        .map(|u| u.superuser)
+        .unwrap_or(false);
+
+    ws.on_upgrade(move |socket| async move {
+        handle_uploads_socket(socket, upload_tracker, is_superuser).await;
+    })
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("stats")
         .add("/usage", get(get_server_usage))
+        .add("/ws/uploads", get(ws_uploads))
 }

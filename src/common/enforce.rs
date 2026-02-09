@@ -1,5 +1,3 @@
-
-
 #[macro_export]
 macro_rules! enforce_ownership_rule {
     ($user_id:expr, $owner_id:expr, $msg:expr) => {{

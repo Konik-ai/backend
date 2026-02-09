@@ -1,12 +1,12 @@
+pub use super::_entities::routes::{self, ActiveModel, Column, Entity, Model as RM};
 use chrono::offset;
 use chrono::prelude::Utc;
 use loco_rs::model::{ModelError, ModelResult};
 use loco_rs::prelude::*;
-use sea_orm::{ActiveValue, DeleteResult, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait};
+use sea_orm::{
+    ActiveValue, DeleteResult, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait,
+};
 use sea_orm::{DbBackend, Statement};
-pub use super::_entities::routes::{self, ActiveModel, Entity, Model as RM, Column};
-
-
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -40,10 +40,7 @@ impl RM {
     /// # Returns
     ///
     /// Returns a `ModelResult` containing the added route on success, or an error on failure.
-    pub async fn add_route_self(
-        self,
-        db: &DatabaseConnection,
-    ) -> ModelResult<Self> {
+    pub async fn add_route_self(self, db: &DatabaseConnection) -> ModelResult<Self> {
         let txn = db.begin().await?;
         if Entity::find()
             .filter(Column::Fullname.eq(&self.fullname))
@@ -54,19 +51,15 @@ impl RM {
             return Err(ModelError::EntityAlreadyExists {});
         }
         let active_model = self.clone().into_active_model();
-        active_model.insert(&txn)
-        .await?;
+        active_model.insert(&txn).await?;
         txn.commit().await?;
         Ok(self)
-        
     }
-        /// Aggregate route miles per day (UTC) for all time.
-        /// Groups by start_time_utc_millis floored to day and sums length.
-        /// Returns Vec of (day_start_ms, total_miles_for_day)
-        pub async fn daily_miles_all_time(
-            db: &DatabaseConnection,
-        ) -> ModelResult<Vec<(i64, f64)>> {
-            let sql = r#"
+    /// Aggregate route miles per day (UTC) for all time.
+    /// Groups by start_time_utc_millis floored to day and sums length.
+    /// Returns Vec of (day_start_ms, total_miles_for_day)
+    pub async fn daily_miles_all_time(db: &DatabaseConnection) -> ModelResult<Vec<(i64, f64)>> {
+        let sql = r#"
                 SELECT 
                     (start_time_utc_millis / 86400000) * 86400000 as day_ms,
                     SUM(CAST(length AS FLOAT8)) as total_miles
@@ -75,16 +68,16 @@ impl RM {
                 GROUP BY (start_time_utc_millis / 86400000)
                 ORDER BY day_ms
             "#;
-            let stmt = Statement::from_string(DbBackend::Postgres, sql.to_string());
-            let rows = db.query_all(stmt).await?;
-            let mut out: Vec<(i64, f64)> = Vec::with_capacity(rows.len());
-            for row in rows {
-                let day_ms: i64 = row.try_get("", "day_ms")?;
-                let miles: f64 = row.try_get("", "total_miles")?;
-                out.push((day_ms, miles));
-            }
-            Ok(out)
+        let stmt = Statement::from_string(DbBackend::Postgres, sql.to_string());
+        let rows = db.query_all(stmt).await?;
+        let mut out: Vec<(i64, f64)> = Vec::with_capacity(rows.len());
+        for row in rows {
+            let day_ms: i64 = row.try_get("", "day_ms")?;
+            let miles: f64 = row.try_get("", "total_miles")?;
+            out.push((day_ms, miles));
         }
+        Ok(out)
+    }
     /// Finds a route by its canonical route name.
     ///
     /// # Arguments
@@ -95,10 +88,7 @@ impl RM {
     /// # Returns
     ///
     /// Returns a `ModelResult` containing the found route on success, or an error on failure.
-    pub async fn find_route(
-        db: &DatabaseConnection,
-        fullname: &String,
-    ) -> ModelResult<RM> {
+    pub async fn find_route(db: &DatabaseConnection, fullname: &String) -> ModelResult<RM> {
         let route = Entity::find()
             .filter(Column::Fullname.eq(fullname))
             .one(db)
@@ -130,8 +120,6 @@ impl RM {
         Ok((route.end_lat, route.end_lng, route.end_time_utc_millis))
     }
 
-
-
     pub async fn find_time_filtered_device_routes(
         db: &DatabaseConnection,
         dongle_id: &str,
@@ -154,10 +142,7 @@ impl RM {
         if let Some(limit_val) = limit {
             query = query.limit(limit_val);
         }
-        let routes = query
-            .order_by_desc(Column::CreatedAt)
-            .all(db)
-            .await?;
+        let routes = query.order_by_desc(Column::CreatedAt).all(db).await?;
         Ok(routes)
     }
 
@@ -170,14 +155,12 @@ impl RM {
             .filter(Column::DeviceDongleId.eq(dongle_id))
             .order_by_desc(Column::CreatedAt)
             .limit(limit)
-            .all(db).await?;
+            .all(db)
+            .await?;
         Ok(routes)
     }
 
-    pub async fn is_public(
-        db: &DatabaseConnection,
-        fullname: &str,
-    ) -> ModelResult<bool> {
+    pub async fn is_public(db: &DatabaseConnection, fullname: &str) -> ModelResult<bool> {
         let route = Entity::find()
             .filter(Column::Fullname.eq(fullname))
             .one(db)
@@ -222,10 +205,10 @@ impl RM {
             .into_tuple::<f32>() // Use f32 to match the SQL type
             .all(db)
             .await?;
-    
+
         let total_length: f32 = routes.iter().sum(); // Sum all the lengths
         let route_count = routes.len() as u32; // Count the number of routes
-    
+
         Ok((total_length, route_count))
     }
 
@@ -236,33 +219,37 @@ impl RM {
         to: Option<i64>,
     ) -> ModelResult<(f32, u32, i64)> {
         use sea_orm::prelude::*;
-        use sea_orm::{QuerySelect, Condition};
-        
+        use sea_orm::{Condition, QuerySelect};
+
         let mut condition = Condition::all()
             .add(Column::DeviceDongleId.eq(dongle_id))
             .add(Column::Length.gt(0.1))
             .add(Expr::col(Column::StartTimeUtcMillis).lt(Expr::col(Column::EndTimeUtcMillis)));
-                
+
         if let Some(from) = from {
             condition = condition.add(Column::StartTimeUtcMillis.gte(from));
         }
-        
+
         if let Some(to) = to {
             condition = condition.add(Column::StartTimeUtcMillis.lte(to));
         }
-        
+
         let routes: Vec<(f32, i64, i64)> = Entity::find()
             .filter(condition)
             .select_only()
-            .columns([Column::Length, Column::StartTimeUtcMillis, Column::EndTimeUtcMillis])
-            .into_tuple::<(f32, i64, i64)>()  // Fetch length, start, and end times
+            .columns([
+                Column::Length,
+                Column::StartTimeUtcMillis,
+                Column::EndTimeUtcMillis,
+            ])
+            .into_tuple::<(f32, i64, i64)>() // Fetch length, start, and end times
             .all(db)
             .await?;
-        
+
         let total_length: f32 = routes.iter().map(|(length, _, _)| length).sum(); // Sum all the lengths
         let total_route_time: i64 = routes.iter().map(|(_, start, end)| end - start).sum(); // Sum total time (end - start) for each route
         let route_count = routes.len() as u32; // Count the number of routes
-        
+
         Ok((total_length, route_count, total_route_time))
     }
 
@@ -277,15 +264,10 @@ impl RM {
         Ok(sum.unwrap_or(0.0))
     }
 
-    pub async fn get_drive_count(
-        db: &DatabaseConnection
-    ) -> ModelResult<u64, DbErr> {
-        Entity::find()
-            .count(db)
-            .await
+    pub async fn get_drive_count(db: &DatabaseConnection) -> ModelResult<u64, DbErr> {
+        Entity::find().count(db).await
     }
 
-    
     /// Deletes a route by its canonical route name.
     ///
     /// # Arguments
@@ -324,6 +306,4 @@ impl RM {
     }
 }
 
-impl ActiveModel {
-
-}
+impl ActiveModel {}

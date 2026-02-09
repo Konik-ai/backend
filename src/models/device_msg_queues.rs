@@ -1,9 +1,8 @@
+pub use super::_entities::device_msg_queues::{self, ActiveModel, Column, Entity, Model as DMQM};
+use crate::controllers::ws::JsonRpcRequest;
 use chrono::prelude::Utc;
 use loco_rs::prelude::*;
 use sea_orm::{ActiveValue, QueryOrder, QuerySelect};
-pub use super::_entities::device_msg_queues::{self, ActiveModel, Entity, Model as DMQM, Column};
-use crate::controllers::ws::JsonRpcRequest;
-
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -25,9 +24,7 @@ impl ActiveModelBehavior for ActiveModel {
     }
 }
 
-
 impl DMQM {
-
     pub async fn get_latest_msg(
         db: &DatabaseConnection,
         dongle_id: &str,
@@ -59,7 +56,7 @@ impl DMQM {
             .order_by_desc(Column::CreatedAt)
             .one(db)
             .await?;
-    
+
         Ok(msg)
     }
 
@@ -71,7 +68,9 @@ impl DMQM {
         // Create a new active model to insert into the database
         let new_msg = ActiveModel {
             dongle_id: ActiveValue::Set(dongle_id.clone()),
-            json_rpc_request: ActiveValue::Set(serde_json::to_value(json_rpc_request).unwrap_or_default()),
+            json_rpc_request: ActiveValue::Set(
+                serde_json::to_value(json_rpc_request).unwrap_or_default(),
+            ),
             ..Default::default()
         };
 
@@ -81,16 +80,9 @@ impl DMQM {
         Ok(())
     }
 
-    pub async fn delete_one_msg(
-        db: &DatabaseConnection,
-        id: &str,
-    ) -> Result<(), DbErr> {
+    pub async fn delete_one_msg(db: &DatabaseConnection, id: &str) -> Result<(), DbErr> {
         // Find the latest message ID for the given dongle_id
-        if let Some(latest_msg) = Entity::find()
-            .filter(Column::Id.eq(id))
-            .one(db)
-            .await?
-        {
+        if let Some(latest_msg) = Entity::find().filter(Column::Id.eq(id)).one(db).await? {
             // Delete the message using the found ID
             Entity::delete_by_id(latest_msg.id).exec(db).await?;
         }
@@ -98,10 +90,7 @@ impl DMQM {
         Ok(())
     }
 
-    pub async fn delete_all_msgs(
-        db: &DatabaseConnection,
-        dongle_id: &str,
-    ) -> Result<(), DbErr> {
+    pub async fn delete_all_msgs(db: &DatabaseConnection, dongle_id: &str) -> Result<(), DbErr> {
         // Delete all messages for the given dongle_id
         Entity::delete_many()
             .filter(Column::DongleId.eq(dongle_id))
@@ -110,6 +99,4 @@ impl DMQM {
 
         Ok(())
     }
-
-
 }

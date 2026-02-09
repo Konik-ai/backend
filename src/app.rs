@@ -1,37 +1,38 @@
-use std::{
-    env,
-    path::Path,
-    sync::Arc,
-    {net::SocketAddr, path::PathBuf}
-};
-use tokio::time;
 use async_trait::async_trait;
-use migration::Migrator;
-use sea_orm::DatabaseConnection;
-use reqwest::Client;
-use tower_http::normalize_path::NormalizePathLayer;
-use tower_layer::Layer;
-use axum_server::tls_rustls::RustlsConfig;
 use axum::Extension;
+use axum_server::tls_rustls::RustlsConfig;
 use loco_rs::{
     app::{AppContext, Hooks, Initializer},
     boot::{create_app, BootResult, StartMode},
     controller::AppRoutes,
     db::truncate_table,
     environment::Environment,
+    storage,
     task::Tasks,
     worker::{AppWorker, Processor},
     Result,
-    storage,
 };
+use migration::Migrator;
+use reqwest::Client;
+use sea_orm::DatabaseConnection;
+use std::{
+    env,
+    path::Path,
+    sync::Arc,
+    {net::SocketAddr, path::PathBuf},
+};
+use tokio::time;
+use tower_http::normalize_path::NormalizePathLayer;
+use tower_layer::Layer;
 
 use crate::{
-    tasks,
+    common::upload_tracker::UploadTracker,
     controllers,
+    controllers::ws::ConnectionManager,
     initializers,
-    controllers::ws::ConnectionManager, 
     models::_entities::{devices, users},
-    workers::log_helpers::{persist_param_value_counts, persist_device_params}
+    tasks,
+    workers::log_helpers::{persist_device_params, persist_param_value_counts},
 };
 
 pub struct App {}
@@ -160,9 +161,12 @@ impl Hooks for App {
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap();
+
+        let upload_tracker = UploadTracker::new();
         let router = router
             .layer(Extension(client))
-            .layer(Extension(connection_manager));
+            .layer(Extension(connection_manager))
+            .layer(Extension(upload_tracker));
 
         Ok(router)
     }
@@ -185,42 +189,37 @@ impl Hooks for App {
         )
         .await
         .unwrap();
-    // Clone the app for the HTTP server
-    let app_clone = app.clone();
-    // HTTPS Listener
-    let https_addr = SocketAddr::from((
-        std::net::Ipv6Addr::UNSPECIFIED, 
-        my_server_config.https
-    ));
+        // Clone the app for the HTTP server
+        let app_clone = app.clone();
+        // HTTPS Listener
+        let https_addr =
+            SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, my_server_config.https));
 
-    let https_server = tokio::spawn(async move {
-        axum_server::bind_rustls(https_addr, config)
-            .serve(app.into_make_service())
-            .await
-    });
+        let https_server = tokio::spawn(async move {
+            axum_server::bind_rustls(https_addr, config)
+                .serve(app.into_make_service())
+                .await
+        });
 
-    // HTTP Listener
-    let http_addr = SocketAddr::from((
-        std::net::Ipv6Addr::UNSPECIFIED,
-        my_server_config.http
-    ));
+        // HTTP Listener
+        let http_addr = SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, my_server_config.http));
 
-    let http_server = tokio::spawn(async move {
-        axum_server::bind(http_addr)
-            .serve(app_clone.into_make_service())
-            .await
-    });
+        let http_server = tokio::spawn(async move {
+            axum_server::bind(http_addr)
+                .serve(app_clone.into_make_service())
+                .await
+        });
 
-    // Await both servers separately
-    if let Err(e) = http_server.await {
-        eprintln!("HTTP server failed: {}", e);
-    }
+        // Await both servers separately
+        if let Err(e) = http_server.await {
+            eprintln!("HTTP server failed: {}", e);
+        }
 
-    if let Err(e) = https_server.await {
-        eprintln!("HTTPS server failed: {}", e);
-    }
+        if let Err(e) = https_server.await {
+            eprintln!("HTTPS server failed: {}", e);
+        }
 
-    Ok(())
+        Ok(())
     }
 }
 

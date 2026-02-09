@@ -1,10 +1,8 @@
-
-
-use loco_rs::{prelude::*};
+pub use super::_entities::users::{self, ActiveModel, Entity, Model as UM};
+use crate::middleware::jwt;
+use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::middleware::jwt;
-pub use super::_entities::users::{self, ActiveModel, Entity, Model as UM};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoginParams {
@@ -38,7 +36,7 @@ impl Validatable for super::_entities::users::ActiveModel {
         })
     }
 }
-use chrono::prelude::{Utc};
+use chrono::prelude::Utc;
 #[async_trait::async_trait]
 impl ActiveModelBehavior for super::_entities::users::ActiveModel {
     async fn before_save<C>(self, _db: &C, insert: bool) -> Result<Self, DbErr>
@@ -48,7 +46,6 @@ impl ActiveModelBehavior for super::_entities::users::ActiveModel {
         self.validate()?;
         let mut this = self;
         if insert {
-            
             this.identity = ActiveValue::Set(Uuid::new_v4());
             this.created_at = ActiveValue::Set(Utc::now().naive_utc());
             this.updated_at = ActiveValue::Set(Utc::now().naive_utc());
@@ -60,16 +57,9 @@ impl ActiveModelBehavior for super::_entities::users::ActiveModel {
     }
 }
 
-
-
 impl super::_entities::users::Model {
-    pub async fn find_all_users(
-        db: &DatabaseConnection,
-    ) -> Vec<UM> {
-        Entity::find()
-            .all(db)
-            .await
-            .expect("Database query failed")
+    pub async fn find_all_users(db: &DatabaseConnection) -> Vec<UM> {
+        Entity::find().all(db).await.expect("Database query failed")
     }
     /// finds a user by the provided pid
     ///
@@ -126,15 +116,13 @@ impl super::_entities::users::Model {
                 }
                 .insert(&txn)
                 .await?;
-        
+
                 txn.commit().await?;
-        
+
                 Ok(user)
-            } 
+            }
         }
     }
-
-
 
     /// Creates a JWT
     ///
@@ -146,6 +134,4 @@ impl super::_entities::users::Model {
     }
 }
 
-impl ActiveModel {
-
-}
+impl ActiveModel {}

@@ -1,5 +1,5 @@
-use loco_rs::prelude::*;
 use axum::extract::Query;
+use loco_rs::prelude::*;
 use serde::Deserialize;
 use std::collections::HashSet;
 
@@ -14,16 +14,19 @@ pub async fn list_or_get_params(
     Query(query): Query<ParamsQuery>,
 ) -> Result<Response> {
     if let Some(params_str) = query.params {
-        let param_list: HashSet<_> = params_str.split(',').map(|s| s.trim().to_string()).collect();
+        let param_list: HashSet<_> = params_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
         let mut result = serde_json::Map::new();
         for p in param_list {
-            let try_paths = [
-                format!("/params/{}.json", p),
-                format!("/params/{}", p),
-            ];
+            let try_paths = [format!("/params/{}.json", p), format!("/params/{}", p)];
             if let Some(file) = try_paths.iter().find_map(|path| std::fs::read(path).ok()) {
                 if let Ok(val) = String::from_utf8(file) {
-                    result.insert(p, serde_json::from_str(&val).unwrap_or(serde_json::Value::String(val)));
+                    result.insert(
+                        p,
+                        serde_json::from_str(&val).unwrap_or(serde_json::Value::String(val)),
+                    );
                 }
             }
         }
@@ -58,7 +61,6 @@ pub async fn list_or_get_params(
         .unwrap())
 }
 
-
 pub async fn get_params_metrics(
     _auth: crate::middleware::auth::MyJWT,
     State(_ctx): State<AppContext>,
@@ -70,7 +72,10 @@ pub async fn get_params_metrics(
 
     // Parse the params from the query string
     let param_set: Option<HashSet<String>> = query.params.as_ref().map(|params_str| {
-        params_str.split(',').map(|s| s.trim().to_string()).collect()
+        params_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect()
     });
 
     // Map: param_name -> value -> count
@@ -83,16 +88,23 @@ pub async fn get_params_metrics(
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("json") {
                 if let Ok(data) = fs::read_to_string(&path) {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&data) {
-                        let keys: Box<dyn Iterator<Item = &String>> = if let Some(ref param_set) = param_set {
-                            Box::new(param_set.iter())
-                        } else {
-                            Box::new(json.keys())
-                        };
+                    if let Ok(json) =
+                        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&data)
+                    {
+                        let keys: Box<dyn Iterator<Item = &String>> =
+                            if let Some(ref param_set) = param_set {
+                                Box::new(param_set.iter())
+                            } else {
+                                Box::new(json.keys())
+                            };
                         for param in keys {
                             if let Some(val) = json.get(param) {
-                                let val_str = val.as_str().map(|s| s.to_string()).unwrap_or_else(|| val.to_string());
-                                let entry = result.entry(param.clone()).or_insert_with(HashMap::new);
+                                let val_str = val
+                                    .as_str()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| val.to_string());
+                                let entry =
+                                    result.entry(param.clone()).or_insert_with(HashMap::new);
                                 *entry.entry(val_str).or_insert(0) += 1;
                             }
                         }

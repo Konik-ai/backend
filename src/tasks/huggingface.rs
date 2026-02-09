@@ -14,8 +14,6 @@ impl Task for Huggingface {
     async fn run(&self, _app_context: &AppContext, _vars: &task::Vars) -> Result<()> {
         println!("Task Huggingface generated");
 
-
         Ok(())
     }
 }
-

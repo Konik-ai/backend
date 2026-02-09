@@ -2,13 +2,12 @@ use std::collections::BTreeMap;
 
 use loco_rs::prelude::*;
 
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use futures_util::{StreamExt, SinkExt};
-use serde_json::{json, Value};
-use url::Url;
+use futures_util::{SinkExt, StreamExt};
 use http::Request;
+use serde_json::{json, Value};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use url::Url;
 use uuid::Uuid;
-
 
 async fn websocket_client_task(server_url: &str, dongle_id: &str, jwt: &str) {
     let uri = format!("{}/{}", server_url, dongle_id);
@@ -37,14 +36,18 @@ async fn websocket_client_task(server_url: &str, dongle_id: &str, jwt: &str) {
         "method": "listDataDirectory",
         "params": {},
         "id": id
-    }).to_string();
+    })
+    .to_string();
     if let Err(e) = ws_stream.send(Message::Text(list_command)).await {
         eprintln!("Failed to send message: {:?}", e);
         return;
     }
 
     // Regex to format the filename into the desired URL format
-    let re_drive_log = regex::Regex::new(r"^([0-9]{4}-[0-9]{2}-[0-9]{2}--[0-9]{2}-[0-9]{2}-[0-9]{2})--([0-9]+)/rlog$").unwrap();
+    let re_drive_log = regex::Regex::new(
+        r"^([0-9]{4}-[0-9]{2}-[0-9]{2}--[0-9]{2}-[0-9]{2}-[0-9]{2})--([0-9]+)/rlog$",
+    )
+    .unwrap();
 
     // Listen for responses and handle them
     while let Some(message) = ws_stream.next().await {
@@ -75,12 +78,16 @@ async fn websocket_client_task(server_url: &str, dongle_id: &str, jwt: &str) {
                             "method": "uploadFilesToUrls",
                             "params": [upload_commands],
                             "id": id
-                        }).to_string();
-                        ws_stream.send(Message::Text(upload_message)).await.expect("Failed to send upload command");
+                        })
+                        .to_string();
+                        ws_stream
+                            .send(Message::Text(upload_message))
+                            .await
+                            .expect("Failed to send upload command");
                     }
                 }
-            },
-            Ok(_) => {}, // Handle other types of messages
+            }
+            Ok(_) => {} // Handle other types of messages
             Err(e) => {
                 eprintln!("Error in websocket stream: {:?}", e);
                 break; // or attempt to reconnect
@@ -88,7 +95,6 @@ async fn websocket_client_task(server_url: &str, dongle_id: &str, jwt: &str) {
         }
     }
 }
-
 
 pub struct CollectData;
 #[async_trait]

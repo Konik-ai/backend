@@ -1,24 +1,19 @@
 #![allow(clippy::unused_async)]
-use std::env;
-use sha2::{Sha256, Digest};
-use hex;
 use axum::{
+    body::Body,
     extract::{Form, Query, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-	body::Body,
 };
+use hex;
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use loco_rs::prelude::*;
-use serde::{Serialize, Deserialize};
-use jsonwebtoken::{
-    decode, decode_header, Algorithm, DecodingKey, TokenData, Validation,
-};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::env;
 
-use crate::models::{
-        devices::DM,
-        users::UM,
-};
 use crate::models::users::OAuthUserParams;
+use crate::models::{devices::DM, users::UM};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DeviceClaims {
@@ -29,13 +24,13 @@ pub struct DeviceClaims {
 ///Query parameters
 //
 /// imei: Device IMEI
-/// 
+///
 /// imei2: Device IMEI, second slot
-/// 
+///
 /// serial: Device Serial
-/// 
+///
 /// public_key: 2048-bit RSA Public Key
-/// 
+///
 /// register_token: JWT token signed by your private key containing payload: {"register": True}
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DeviceRegistrationParams {
@@ -43,7 +38,7 @@ pub struct DeviceRegistrationParams {
     pub imei2: String,
     pub serial: String,
     pub public_key: String,
-    pub register_token: String
+    pub register_token: String,
 }
 impl DeviceRegistrationParams {
     pub fn generate_dongle_id(&self) -> String {
@@ -65,9 +60,9 @@ impl DeviceRegistrationParams {
 }
 
 /// Key	    Type    Description
-/// 
+///
 ///"dongle_id"	    (string)	Dongle ID
-/// 
+///
 ///"access_token"	(string)    JWT token (see Authentication)
 #[derive(Debug, Deserialize, Serialize)]
 struct PilotAuthResponse {
@@ -75,9 +70,14 @@ struct PilotAuthResponse {
     access_token: String,
 }
 
-async fn decode_register_token(params: &DeviceRegistrationParams) -> Option<TokenData<DeviceClaims>> {
+async fn decode_register_token(
+    params: &DeviceRegistrationParams,
+) -> Option<TokenData<DeviceClaims>> {
     // Detect alg from header; default to RS256 for legacy behavior
-    let alg = decode_header(&params.register_token).ok().map(|h| h.alg).unwrap_or(Algorithm::RS256);
+    let alg = decode_header(&params.register_token)
+        .ok()
+        .map(|h| h.alg)
+        .unwrap_or(Algorithm::RS256);
 
     let (validation, key) = match alg {
         Algorithm::RS256 => {
@@ -96,7 +96,7 @@ async fn decode_register_token(params: &DeviceRegistrationParams) -> Option<Toke
 
 pub async fn pilotauth(
     State(ctx): State<AppContext>,
-    Query(params): Query<DeviceRegistrationParams>
+    Query(params): Query<DeviceRegistrationParams>,
 ) -> impl IntoResponse {
     let _token = decode_register_token(&params).await;
     let dongle_id = params.generate_dongle_id();
@@ -105,11 +105,17 @@ pub async fn pilotauth(
     match result {
         Ok(_) => {
             tracing::info!("Device registered: {}", &dongle_id);
-            return (StatusCode::OK, format::json(PilotAuthResponse { dongle_id: dongle_id, access_token: "".into()}))
+            return (
+                StatusCode::OK,
+                format::json(PilotAuthResponse {
+                    dongle_id: dongle_id,
+                    access_token: "".into(),
+                }),
+            );
         }
         Err(result) => {
-            tracing::error!("Failed to register device: {} {}", dongle_id,  result);
-            return (StatusCode::FORBIDDEN, Err(loco_rs::Error::Model(result)))
+            tracing::error!("Failed to register device: {} {}", dongle_id, result);
+            return (StatusCode::FORBIDDEN, Err(loco_rs::Error::Model(result)));
         }
     }
 }
@@ -132,7 +138,10 @@ struct DevicePairClaims {
     pair: bool,
 }
 
-async fn decode_pair_token(ctx: &AppContext, jwt: &str) -> Result<DevicePairClaims, jsonwebtoken::errors::Error> {
+async fn decode_pair_token(
+    ctx: &AppContext,
+    jwt: &str,
+) -> Result<DevicePairClaims, jsonwebtoken::errors::Error> {
     let mut validation = Validation::new(Algorithm::RS256); //alg should not matter here
     validation.insecure_disable_signature_validation();
     let token_data = match decode::<DevicePairClaims>(
@@ -143,7 +152,7 @@ async fn decode_pair_token(ctx: &AppContext, jwt: &str) -> Result<DevicePairClai
         Ok(token_data) => token_data,
         Err(e) => return Err(e),
     };
-    
+
     let device = match DM::find_device(&ctx.db, &token_data.claims.identity).await {
         Ok(device) => device,
         Err(_e) => return Ok(token_data.claims),
@@ -154,7 +163,8 @@ async fn decode_pair_token(ctx: &AppContext, jwt: &str) -> Result<DevicePairClai
         Algorithm::RS256 => DecodingKey::from_rsa_pem(device.public_key.as_bytes()),
         Algorithm::ES256 => DecodingKey::from_ec_pem(device.public_key.as_bytes()),
         _ => return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into()),
-    }.map_err(|e| e)?;
+    }
+    .map_err(|e| e)?;
 
     let claims = decode::<DevicePairClaims>(jwt, &key, &Validation::new(alg));
     match claims {
@@ -166,7 +176,7 @@ async fn decode_pair_token(ctx: &AppContext, jwt: &str) -> Result<DevicePairClai
 async fn pilotpair(
     auth: crate::middleware::auth::MyJWT,
     State(ctx): State<AppContext>,
-    Form(params): Form<DevicePairParams>
+    Form(params): Form<DevicePairParams>,
 ) -> impl IntoResponse {
     let claims = match decode_pair_token(&ctx, &params.pair_token).await {
         Ok(claims) => claims,
@@ -178,20 +188,28 @@ async fn pilotpair(
 
     if claims.pair {
         let user_model = UM::find_by_identity(&ctx.db, &auth.claims.identity).await?;
-        let device_model =  DM::find_device(&ctx.db, &claims.identity).await?;
+        let device_model = DM::find_device(&ctx.db, &claims.identity).await?;
         let first_pair = device_model.owner_id.is_none();
         let dongle_id = device_model.dongle_id.clone();
-        
-        if first_pair { // only pair if it wasn't already
+
+        if first_pair {
+            // only pair if it wasn't already
             let mut active_device_model = device_model.into_active_model();
             active_device_model.owner_id = ActiveValue::Set(Some(user_model.id));
             active_device_model.update(&ctx.db).await?;
-            return format::json(DevicePairResponse {first_pair, dongle_id});
+            return format::json(DevicePairResponse {
+                first_pair,
+                dongle_id,
+            });
         }
-        return Ok((StatusCode::FORBIDDEN, "This device is already paired").into_response()); 
+        return Ok((StatusCode::FORBIDDEN, "This device is already paired").into_response());
     } else {
-        return Ok((StatusCode::BAD_REQUEST, "If you want to pair, 'pair' should be true!").into_response());
-    } 
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            "If you want to pair, 'pair' should be true!",
+        )
+            .into_response());
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -200,7 +218,6 @@ pub struct GithubAuthParams {
     state: Option<String>,
     provider: Option<String>,
 }
-
 
 async fn github_redirect_handler(
     State(_ctx): State<AppContext>,
@@ -213,18 +230,21 @@ async fn github_redirect_handler(
             return Err(StatusCode::BAD_REQUEST);
         }
         let service_url = parts[1];
-        let redirect_url = format!("http://{}/auth/?provider=h&code={}", service_url, params.code); // handle openpilot tools auth
-
+        let redirect_url = format!(
+            "http://{}/auth/?provider=h&code={}",
+            service_url, params.code
+        ); // handle openpilot tools auth
 
         let mut headers = HeaderMap::new();
-        headers.insert("Location", HeaderValue::from_str(&redirect_url).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?);
+        headers.insert(
+            "Location",
+            HeaderValue::from_str(&redirect_url).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+        );
 
         return Ok((StatusCode::FOUND, headers));
     }
     Err(StatusCode::BAD_REQUEST)
 }
-
-
 
 #[derive(Deserialize, Serialize)]
 pub struct GithubUser {
@@ -237,21 +257,29 @@ struct GithubTokenResponse {
     access_token: String,
 }
 
-pub async fn get_auth( // use for useradmin
+pub async fn get_auth(
+    // use for useradmin
     State(ctx): State<AppContext>,
-	Query(params): Query<GithubAuthParams>,
+    Query(params): Query<GithubAuthParams>,
 ) -> Result<Response> {
-	let token_url = "https://github.com/login/oauth/access_token";
+    let token_url = "https://github.com/login/oauth/access_token";
     let client = reqwest::Client::new();
     let response = client
         .post(token_url)
         .header("Accept", "application/json")
         .form(&[
-            ("client_id", env::var("GITHUB_CLIENT").expect("GITHUB_CLIENT must be set")),
-            ("client_secret", env::var("GITHUB_SECRET").expect("GITHUB_SECRET must be set")),
+            (
+                "client_id",
+                env::var("GITHUB_CLIENT").expect("GITHUB_CLIENT must be set"),
+            ),
+            (
+                "client_secret",
+                env::var("GITHUB_SECRET").expect("GITHUB_SECRET must be set"),
+            ),
             ("code", params.code),
         ])
-        .send().await;
+        .send()
+        .await;
 
     let response = match response {
         Ok(response) => response,
@@ -261,11 +289,18 @@ pub async fn get_auth( // use for useradmin
         }
     };
 
-    let token_response: GithubTokenResponse = response.json().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR).unwrap();
+    let token_response: GithubTokenResponse = response
+        .json()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .unwrap();
 
     let user_response = client
         .get("https://api.github.com/user")
-        .header("Authorization", format!("Bearer {}", token_response.access_token))
+        .header(
+            "Authorization",
+            format!("Bearer {}", token_response.access_token),
+        )
         .header("User-Agent", "Connect")
         .send()
         .await;
@@ -285,14 +320,16 @@ pub async fn get_auth( // use for useradmin
             return unauthorized("Failed to parse github user response");
         }
     };
-        
+
     let user = UM::with_oauth(
-        &ctx.db, 
+        &ctx.db,
         &OAuthUserParams {
             name: format!("github_{}", github_user.id),
             email: None,
-    }).await?;
-    
+        },
+    )
+    .await?;
+
     let jwt_secret = ctx.config.get_jwt_config()?;
 
     let token = user
@@ -303,13 +340,18 @@ pub async fn get_auth( // use for useradmin
     let mut headers = HeaderMap::new();
     headers.insert(
         header::SET_COOKIE,
-        format!("jwt={}; Path=/; HttpOnly; Secure; Domain=.konik.ai;", token).parse().unwrap(),
+        format!("jwt={}; Path=/; HttpOnly; Secure; Domain=.konik.ai;", token)
+            .parse()
+            .unwrap(),
     );
 
     // Construct the redirect response manually
     let response = Response::builder()
         .status(StatusCode::FOUND)
-        .header(header::SET_COOKIE, headers.get(header::SET_COOKIE).unwrap().to_str().unwrap())
+        .header(
+            header::SET_COOKIE,
+            headers.get(header::SET_COOKIE).unwrap().to_str().unwrap(),
+        )
         .header(header::LOCATION, "/")
         .body(Body::empty())
         .unwrap();
@@ -317,23 +359,29 @@ pub async fn get_auth( // use for useradmin
     Ok(response)
 }
 
-
-async fn post_auth( // used for portal
+async fn post_auth(
+    // used for portal
     State(ctx): State<AppContext>,
-	Form(params): Form<GithubAuthParams>,
+    Form(params): Form<GithubAuthParams>,
 ) -> Result<Response> {
-	
     let token_url = "https://github.com/login/oauth/access_token";
     let client = reqwest::Client::new();
     let response = client
         .post(token_url)
         .header("Accept", "application/json")
         .form(&[
-            ("client_id", env::var("GITHUB_CLIENT").expect("GITHUB_CLIENT must be set")),
-            ("client_secret", env::var("GITHUB_SECRET").expect("GITHUB_SECRET must be set")),
+            (
+                "client_id",
+                env::var("GITHUB_CLIENT").expect("GITHUB_CLIENT must be set"),
+            ),
+            (
+                "client_secret",
+                env::var("GITHUB_SECRET").expect("GITHUB_SECRET must be set"),
+            ),
             ("code", params.code),
         ])
-        .send().await;
+        .send()
+        .await;
 
     let response = match response {
         Ok(response) => response,
@@ -343,11 +391,18 @@ async fn post_auth( // used for portal
         }
     };
 
-    let token_response: GithubTokenResponse = response.json().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR).unwrap();
+    let token_response: GithubTokenResponse = response
+        .json()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .unwrap();
 
     let user_response = client
         .get("https://api.github.com/user")
-        .header("Authorization", format!("Bearer {}", token_response.access_token))
+        .header(
+            "Authorization",
+            format!("Bearer {}", token_response.access_token),
+        )
         .header("User-Agent", "Connect")
         .send()
         .await;
@@ -367,21 +422,25 @@ async fn post_auth( // used for portal
             return unauthorized("Failed to parse github user response");
         }
     };
-        
+
     let user = UM::with_oauth(
-        &ctx.db, 
+        &ctx.db,
         &OAuthUserParams {
             name: format!("github_{}", github_user.id),
             email: None,
-    }).await?;
-    
+        },
+    )
+    .await?;
+
     let jwt_secret = ctx.config.get_jwt_config()?;
 
     let token = user
         .generate_jwt(&jwt_secret.secret, &jwt_secret.expiration)
         .or_else(|_| unauthorized("Failed to generate token!"))?;
 
-    format::json(GithubTokenResponse { access_token: token} )
+    format::json(GithubTokenResponse {
+        access_token: token,
+    })
 }
 
 /// Response for user token endpoint
@@ -401,15 +460,33 @@ pub async fn get_user_token(
     };
     let jwt_secret = match ctx.config.get_jwt_config() {
         Ok(secret) => secret,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate token").into_response(),
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate token",
+            )
+                .into_response()
+        }
     };
     let token = match user_model.generate_jwt(&jwt_secret.secret, &jwt_secret.expiration) {
         Ok(token) => token,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate token").into_response(),
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate token",
+            )
+                .into_response()
+        }
     };
-    match format::json(UserTokenResponse { access_token: token }) {
+    match format::json(UserTokenResponse {
+        access_token: token,
+    }) {
         Ok(resp) => resp,
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to serialize token").into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to serialize token",
+        )
+            .into_response(),
     }
 }
 

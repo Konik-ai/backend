@@ -1,7 +1,7 @@
+pub use super::_entities::bootlogs::{self, ActiveModel, Column, Entity, Model as BM};
 use chrono::prelude::Utc;
 use loco_rs::model::ModelResult;
 use sea_orm::{entity::prelude::*, ActiveValue, TransactionTrait};
-pub use super::_entities::bootlogs::{self, ActiveModel, Model as BM, Entity, Column};
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -26,12 +26,12 @@ impl ActiveModelBehavior for ActiveModel {
 /// Implementation of the `Model` struct for routes.
 impl BM {
     pub async fn add_bootlog(
-        db: &DatabaseConnection, 
-        dongle_id: &String, 
-        bootlog_download_url: &String, 
-        unlog_url: &String, 
-        date_time: &String
-    )  -> ModelResult<Self> {
+        db: &DatabaseConnection,
+        dongle_id: &String,
+        bootlog_download_url: &String,
+        unlog_url: &String,
+        date_time: &String,
+    ) -> ModelResult<Self> {
         let txn = match db.begin().await {
             Ok(txn) => {
                 tracing::debug!("Transaction began");
@@ -62,7 +62,6 @@ impl BM {
                 return Err(e.into());
             }
         };
-
     }
 
     pub async fn find_device_bootlogs(
@@ -75,5 +74,4 @@ impl BM {
             .await?;
         Ok(routes)
     }
-
 }

@@ -1,9 +1,8 @@
+pub use super::_entities::segments::{self, ActiveModel, Column, Entity, Model as SM};
 use chrono::prelude::Utc;
 use loco_rs::prelude::*;
+use sea_orm::{entity::prelude::*, DeleteResult, QueryOrder, TransactionTrait};
 use serde::Serialize;
-use sea_orm::{entity::prelude::*, DeleteResult, TransactionTrait, QueryOrder};
-pub use super::_entities::segments::{self, ActiveModel, Entity, Model as SM, Column};
-
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -24,7 +23,6 @@ impl ActiveModelBehavior for ActiveModel {
         }
     }
 }
-
 
 #[derive(Default, Serialize, Clone)]
 pub struct SegmentParams {
@@ -50,11 +48,7 @@ pub struct SegmentParams {
 }
 
 impl SM {
-
-    pub async fn add_segment_self(
-        self,
-        db: &DatabaseConnection,
-    ) -> ModelResult<Self> {
+    pub async fn add_segment_self(self, db: &DatabaseConnection) -> ModelResult<Self> {
         let txn = db.begin().await?;
         if Entity::find()
             .filter(Column::CanonicalName.eq(&self.canonical_name))
@@ -66,17 +60,12 @@ impl SM {
         }
 
         let active_model = self.clone().into_active_model();
-        active_model.insert(&txn)
-        .await?;
+        active_model.insert(&txn).await?;
         txn.commit().await?;
         Ok(self)
-        
     }
 
-    pub async fn find_one(
-        db: &DatabaseConnection,
-        canonical_name: &String,
-    ) -> ModelResult<SM> {
+    pub async fn find_one(db: &DatabaseConnection, canonical_name: &String) -> ModelResult<SM> {
         let segment = Entity::find()
             .filter(Column::CanonicalName.eq(canonical_name))
             .one(db)
@@ -112,12 +101,8 @@ impl SM {
     }
 
     /// This probably should never be used at scale
-    pub async fn find_all_segments(
-        db: &DatabaseConnection,
-    ) -> ModelResult<Vec<SM>> {
-        let segments = Entity::find()
-            .all(db)
-            .await?;
+    pub async fn find_all_segments(db: &DatabaseConnection) -> ModelResult<Vec<SM>> {
+        let segments = Entity::find().all(db).await?;
         Ok(segments)
     }
 
@@ -125,8 +110,7 @@ impl SM {
         db: &DatabaseConnection,
         canonical_name: &str,
     ) -> ModelResult<DeleteResult> {
-        Ok(Entity::delete_by_id(canonical_name).exec(db).await?)    
-        
+        Ok(Entity::delete_by_id(canonical_name).exec(db).await?)
     }
 
     pub async fn delete_segments(
@@ -140,6 +124,4 @@ impl SM {
     }
 }
 
-impl ActiveModel {
-    
-}
+impl ActiveModel {}

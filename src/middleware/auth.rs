@@ -1,17 +1,17 @@
-
-use std::{env, collections::HashMap};
+use std::{collections::HashMap, env};
 
 use async_trait::async_trait;
 use axum::{
-    extract::{FromRef, FromRequestParts, Query, ws::WebSocketUpgrade},
-    http::{request::Parts, HeaderMap, header}, response::{IntoResponse, Redirect},
+    extract::{ws::WebSocketUpgrade, FromRef, FromRequestParts, Query},
+    http::{header, request::Parts, HeaderMap},
+    response::{IntoResponse, Redirect},
 };
 use axum_extra::extract::cookie;
 //use eyre::Error;
 //use eyre::ErrReport;
-use serde::{Deserialize, Serialize};
 use futures_util::TryFutureExt;
-use loco_rs::{app::AppContext, errors::Error, config::JWT as JWTConfig, prelude::*};
+use loco_rs::{app::AppContext, config::JWT as JWTConfig, errors::Error, prelude::*};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::jwt;
@@ -65,7 +65,7 @@ pub enum AuthError {
     #[error("server error")]
     InternalError,
     #[error("Error verifying jwt")]
-    JWTError(ErrorKind)
+    JWTError(ErrorKind),
 }
 
 impl IntoResponse for AuthError {
@@ -73,9 +73,15 @@ impl IntoResponse for AuthError {
         match self {
             AuthError::Unauthorized(msg) => (http::StatusCode::UNAUTHORIZED, msg).into_response(),
             AuthError::RedirectToLogin => Redirect::to("/login").into_response(),
-            AuthError::ResetDone => (http::StatusCode::ACCEPTED, "Reset your DongleId").into_response(),
+            AuthError::ResetDone => {
+                (http::StatusCode::ACCEPTED, "Reset your DongleId").into_response()
+            }
             //AuthError::FormatError => (http::StatusCode::BAD_REQUEST, "Unauthorized").into_response(),
-            AuthError::InternalError => (http::StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response(),
+            AuthError::InternalError => (
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+            )
+                .into_response(),
             AuthError::JWTError(error_kind) => {
                 let error_message = ErrorMessage {
                     code: http::StatusCode::UNAUTHORIZED.as_u16(),
@@ -87,7 +93,6 @@ impl IntoResponse for AuthError {
         }
     }
 }
-
 
 #[async_trait]
 impl<S> FromRequestParts<S> for MyJWT
@@ -101,13 +106,17 @@ where
         let ctx: AppContext = AppContext::from_ref(state);
 
         let token = extract_token(parts)?;
-            //.map_err(|e| handle_unauth(parts, e))?;
+        //.map_err(|e| handle_unauth(parts, e))?;
 
-        let jwt_secret = ctx.config.get_jwt_config().map_err(|_| AuthError::InternalError)?;
+        let jwt_secret = ctx
+            .config
+            .get_jwt_config()
+            .map_err(|_| AuthError::InternalError)?;
 
         let mut jwt_processor = jwt::JWT::new(&jwt_secret.secret); // algo defaults to HS512 which we use for users
-        // extract the token data to get the algo
-        let token_data = jwt_processor.parse_unverified(&token)
+                                                                   // extract the token data to get the algo
+        let token_data = jwt_processor
+            .parse_unverified(&token)
             .map_err(|e| handle_jwt_err(parts, e.kind()))?;
 
         let alg = token_data.header.alg;
@@ -115,28 +124,37 @@ where
         let identity = &token_data.claims.identity; // this is the dongle_id if its a device or identity if user
         let error_message = format!("identity: {} not registered", identity);
         match alg {
-            Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512 |
-            Algorithm::ES256 | Algorithm::ES384 => { // device can use these algos             
+            Algorithm::RS256
+            | Algorithm::RS384
+            | Algorithm::RS512
+            | Algorithm::ES256
+            | Algorithm::ES384 => {
+                // device can use these algos
                 let device = DM::find_device(&ctx.db, identity)
                     .await
                     .map_err(|_| handle_unauth(parts, &error_message))?; // return here if not registered
 
-                let valid_token_data = jwt_processor.validate_pem(&token, device.public_key.as_bytes())
-                    .map_err(|e| handle_unauth(parts, &format!("Got invalid token: {}", e.to_string())))?;
+                let valid_token_data = jwt_processor
+                    .validate_pem(&token, device.public_key.as_bytes())
+                    .map_err(|e| {
+                        handle_unauth(parts, &format!("Got invalid token: {}", e.to_string()))
+                    })?;
 
-                return Ok(Self { 
-                    claims: valid_token_data.claims, 
-                    device_model: Some(device), 
-                    user_model: None 
+                return Ok(Self {
+                    claims: valid_token_data.claims,
+                    device_model: Some(device),
+                    user_model: None,
                 });
             }
-            Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512 => { // the server issues these to devices and users
-                let valid_token_data = jwt_processor.validate(&token)
-                    .map_err(|e| handle_unauth(parts, &format!("Got invalid token: {}", e.to_string())))?;
+            Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512 => {
+                // the server issues these to devices and users
+                let valid_token_data = jwt_processor.validate(&token).map_err(|e| {
+                    handle_unauth(parts, &format!("Got invalid token: {}", e.to_string()))
+                })?;
 
                 let user_model = UM::find_by_identity(&ctx.db, identity).await;
                 let device_model = DM::find_device(&ctx.db, identity).await;
-                
+
                 if user_model.is_err() && device_model.is_err() {
                     return Err(handle_unauth(parts, &error_message));
                 } else if user_model.is_ok() && device_model.is_ok() {
@@ -149,7 +167,12 @@ where
                     device_model: device_model.ok(),
                 });
             }
-            _ => return Err(handle_unauth(parts, "Must use RS or HS or ES jwt algorithm"))
+            _ => {
+                return Err(handle_unauth(
+                    parts,
+                    "Must use RS or HS or ES jwt algorithm",
+                ))
+            }
         }
     }
 }
@@ -190,7 +213,6 @@ fn handle_unauth(parts: &mut Parts, msg: &str) -> AuthError {
     }
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct DeviceClaims {
     pub identity: String,
@@ -208,7 +230,7 @@ fn extract_token(parts: &mut Parts) -> Result<String, AuthError> {
         })
         .or_else(|_| {
             // If extracting from cookies fails, attempt to extract from the authorization header
-            extract_token_from_header(&parts.headers)     
+            extract_token_from_header(&parts.headers)
         })
         .or_else(|_| {
             // If extracting from the authorization header fails, attempt to extract from the query string
@@ -237,7 +259,6 @@ pub fn extract_token_from_header(headers: &HeaderMap) -> Result<String, String> 
 /// # Errors
 /// when token value from cookie is not found
 pub fn extract_token_from_cookie(name: &str, parts: &Parts) -> Result<String, String> {
-
     let jar: cookie::CookieJar = cookie::CookieJar::from_headers(&parts.headers);
     Ok(jar
         .get(name)

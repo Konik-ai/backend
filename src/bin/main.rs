@@ -1,5 +1,5 @@
-use loco_rs::cli;
 use connect::app::App;
+use loco_rs::cli;
 use migration::Migrator;
 
 fn install_rustls_provider() {
