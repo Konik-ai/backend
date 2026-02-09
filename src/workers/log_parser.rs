@@ -145,13 +145,13 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
         let client = self.client.clone();
         let api_endpoint: String = env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set");
         // check if the device is in the database
-        let _device_model = match devices::Model::find_device(&self.ctx.db, &args.dongle_id).await {
-            Ok(device) => device,
-            Err(e) => {
-                tracing::info!("Recieved file from an unregistered device. {} or DB Error: {}", &args.dongle_id, e.to_string());
-                return Ok(())
-            }
+        let _device_model = match devices::Model::find_device(&self.ctx.db, &args.dongle_id).await { 
+            Ok(d) => d, 
+            Err(e) => { 
+                tracing::info!("Recieved file from an unregistered device. {} or DB Error: {}", args.dongle_id, e); return Ok(()); 
+            } 
         };
+
 
         let canonical_route_name = format!("{}|{}", args.dongle_id, args.timestamp);
         let key = super::log_helpers::calculate_advisory_lock_key(&canonical_route_name);
@@ -222,18 +222,9 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
 
         // Make sure we have the data in the key value store. Maybe not needed later
         let response = match client.get(&args.internal_file_url).send().await {
-            Ok(response) => {
-                let status = response.status();
-                tracing::trace!("Got Ok response with status {status}");
-                if !status.is_success() {
-                    return Ok(());
-                }
-                response
-            }
-            Err(e) => {
-                tracing::error!("GET request failed: {}", format!("{}", e));
-                return Err(sidekiq::Error::Message(e.to_string()));
-            }
+            Ok(r) if r.status().is_success() => r,
+            Ok(r) => { tracing::trace!("GET {} -> {}", args.internal_file_url, r.status()); return Ok(()); }
+            Err(e) => { tracing::error!("GET {} failed: {}", args.internal_file_url, e); return Err(sidekiq::Error::Message(e.to_string())); }
         };
 
 
@@ -526,13 +517,13 @@ async fn parse_qlog(
 ) -> worker::Result<QLogResult> {
     let api_endpoint = env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set");
     seg.ulog_url = ActiveValue::Set(
-                common::mkv_helpers::get_mkv_file_url(
-                    &format!("{}_{}--{}--{}",
-                        args.dongle_id,
-                        args.timestamp,
-                        args.segment,
-                        args.file
-                    )
+            common::mkv_helpers::get_mkv_file_url(
+                &format!("{}_{}--{}--{}",
+                    args.dongle_id,
+                    args.timestamp,
+                    args.segment,
+                    args.file
+                )
             )
         );
     seg.qlog_url = ActiveValue::Set(format!("{api_endpoint}/connectdata/qlog/{}/{}/{}/{}", args.dongle_id, args.timestamp, args.segment, args.file));
@@ -798,13 +789,13 @@ async fn parse_qlog(
         let mut combined_img = ImageBuffer::new(combined_width, 80);
 
         for (i, thumbnail) in downscaled_thumbnails.iter().enumerate() {
-                    let offset = i as u32 * (1536 / 12);
-                    for y in 0..80 {
-                        for x in 0..(1536 / 12) {
-                            let pixel = thumbnail.get_pixel(x, y);
-                            combined_img.put_pixel(x + offset, y, *pixel);
-                        }
-                    }
+            let offset = i as u32 * (1536 / 12);
+            for y in 0..80 {
+                for x in 0..(1536 / 12) {
+                    let pixel = thumbnail.get_pixel(x, y);
+                    combined_img.put_pixel(x + offset, y, *pixel);
+                }
+            }
         }
 
         // Create the final image with a height of 80px
