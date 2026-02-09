@@ -195,7 +195,7 @@ async fn pilotpair(
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct GithubAuthParams {
+pub struct GithubAuthParams {
     code: String,
     state: Option<String>,
     provider: Option<String>,
@@ -213,11 +213,7 @@ async fn github_redirect_handler(
             return Err(StatusCode::BAD_REQUEST);
         }
         let service_url = parts[1];
-        let redirect_url = if service_url.starts_with("localhost") {
-            format!("http://{}/auth/?provider=h&code={}", service_url, params.code) // handle openpilot tools auth
-        } else {
-            format!("https://{}/v2/auth/?provider=h&code={}", service_url, params.code)
-        };
+        let redirect_url = format!("http://{}/auth/?provider=h&code={}", service_url, params.code); // handle openpilot tools auth
 
 
         let mut headers = HeaderMap::new();
@@ -241,7 +237,7 @@ struct GithubTokenResponse {
     access_token: String,
 }
 
-async fn get_auth( // use for useradmin
+pub async fn get_auth( // use for useradmin
     State(ctx): State<AppContext>,
 	Query(params): Query<GithubAuthParams>,
 ) -> Result<Response> {

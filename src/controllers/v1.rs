@@ -1227,6 +1227,7 @@ pub fn routes() -> Routes {
         .add("/:dongleId/upload_urls/", post(upload_urls_handler))
         .add(".4/:dongleId/upload_url/", get(get_upload_url))
         .add("/devices/:dongle_id/routes_segments", get(route_segment))
+        .add("/devices/:dongle_id/routes", get(route_segment))
         .add("/devices/:dongle_id/routes/preserved", get(preserved_routes))
         .add("/devices/:dongle_id/unpair", post(unpair))
         .add("/devices/:dongle_id/location", get(device_location))

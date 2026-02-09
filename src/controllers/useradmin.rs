@@ -26,6 +26,7 @@ use crate::{
         segments::SM,
     },
     views,
+    controllers::v2::get_auth,
 };
 
 #[derive(Deserialize)]
@@ -402,8 +403,8 @@ pub fn routes() -> Routes {
     Routes::new()
         .add("/", get(onebox_handler))
         .add("/login", get(login))
+        .add("/auth", get(get_auth))
         .add("/cloudlogs", get(cloudlogs_view))
         .add("/qlog", get(qlog_render))
         .add("/auth/logout", get(logout))
-
 }
