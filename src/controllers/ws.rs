@@ -11,11 +11,10 @@ use axum::{
         routing::get, 
         Extension 
 };
-use futures::stream::SplitSink;
 use loco_rs::app::AppContext;
 use sea_orm::{ActiveModelTrait, ActiveValue, IntoActiveModel};
 use std::{collections::{HashMap}, sync::Arc};
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::time::{self, Duration};
@@ -132,7 +131,7 @@ enum JsonRpcMessage {
 
 pub struct DeviceConnection {
     pub connection_id: String,
-    pub sender: SplitSink<WebSocket, Message>,
+    pub sender: mpsc::Sender<Message>,
     pub command_queue: Vec<JsonRpcRequest>,
 }
 
@@ -180,14 +179,18 @@ async fn handle_jsonrpc_request(
     id_string.push_str(&now_id);
     // Update payload.id with the new string.
     payload.id = Id::String(id_string.clone()); 
-    
-    let message = Message::Text(serde_json::to_string(&payload)?);
-    forward_command_to_device(&endpoint_dongle_id, &manager, &message).await?;
-    
-    let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<JsonRpcResponse>(1);
+
+    let (response_tx, mut response_rx) = mpsc::channel::<JsonRpcResponse>(1);
     {
         let mut clients = manager.clients.lock().await;
-        clients.insert(id_string, response_tx);
+        clients.insert(id_string.clone(), response_tx);
+    }
+
+    let message = Message::Text(serde_json::to_string(&payload)?);
+    if let Err(err) = forward_command_to_device(&endpoint_dongle_id, &manager, &message).await {
+        let mut clients = manager.clients.lock().await;
+        clients.remove(&id_string);
+        return Err(err);
     }
     
     loop {
@@ -205,13 +208,15 @@ async fn handle_jsonrpc_request(
                 return Ok(format::json(response));
             },
             Ok(None) => {
-                // Acknowledge and continue waiting for a valid response.
-                continue;
+                // Sender side disappeared before a response arrived.
+                let mut clients = manager.clients.lock().await;
+                clients.remove(&id_string);
+                return Err(Error::Timeout);
             },
             Err(_e) => {
                 // Remove client on timeout.
                 let mut clients = manager.clients.lock().await;
-                clients.remove(&now_id);
+                clients.remove(&id_string);
                 return Err(Error::Timeout);
             },
         }
@@ -224,11 +229,13 @@ async fn forward_command_to_device(
     manager: &Arc<ConnectionManager>,
     message: &Message,
 ) -> Result<()> {
-    let mut device_connections = manager.devices.lock().await;
-    let device_conn = device_connections.get_mut(endpoint_dongle_id).ok_or(Error::DeviceNotFound)?;
+    let device_sender = {
+        let device_connections = manager.devices.lock().await;
+        let device_conn = device_connections.get(endpoint_dongle_id).ok_or(Error::DeviceNotFound)?;
+        device_conn.sender.clone()
+    };
 
-    device_conn
-        .sender
+    device_sender
         .send(message.clone())
         .await
         .map_err(|e| Error::SendFailed(e.to_string()))?;
@@ -275,15 +282,34 @@ async fn handle_socket(
     manager: Arc<ConnectionManager>,
 ) {
     let is_device = jwt_identity == endpoint_dongle_id;
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, mut receiver) = socket.split();
+    let mut sender_guard = Some(sender);
     let connection_id = Uuid::new_v4().to_string();
 
     if is_device {
+        let (device_sender, mut device_receiver) = mpsc::channel::<Message>(64);
+        let mut sender = match sender_guard.take() {
+            Some(sender) => sender,
+            None => {
+                tracing::error!("Missing websocket sender for device {}", endpoint_dongle_id);
+                return;
+            }
+        };
+
+        tokio::spawn(async move {
+            while let Some(outgoing_message) = device_receiver.recv().await {
+                if let Err(e) = sender.send(outgoing_message).await {
+                    tracing::debug!("Error sending outgoing websocket message: {:?}", e);
+                    break;
+                }
+            }
+        });
+
         let mut devices: tokio::sync::MutexGuard<HashMap<String, DeviceConnection>> = manager.devices.lock().await;
         tracing::info!("Adding device to manager: {}", endpoint_dongle_id);
         devices.insert(endpoint_dongle_id.clone(), DeviceConnection {
             connection_id: connection_id.clone(),
-            sender,
+            sender: device_sender,
             command_queue: Vec::new(),
         });
     }
@@ -322,9 +348,12 @@ async fn handle_socket(
                 if let Ok(message) = serde_json::from_str::<JsonRpcMessage>(&text) {
                     match message {
                         JsonRpcMessage::Response(resp) => {
-                            let mut clients = manager.clients.lock().await;
                             let id_str: String = resp.id.clone().into();
-                            if let Some(client_sender) = clients.remove(&id_str) {
+                            let client_sender = {
+                                let mut clients = manager.clients.lock().await;
+                                clients.remove(&id_str)
+                            };
+                            if let Some(client_sender) = client_sender {
                                 let _ = client_sender.send(resp).await;
                             }
                         },
@@ -477,16 +506,23 @@ async fn handle_device_ws(
 }
 
 pub async fn send_ping_to_all_devices(manager: Arc<ConnectionManager>, db: &DatabaseConnection) {
-    let mut devices = manager.devices.lock().await;
-    for (dongle_id, device_connection) in devices.iter_mut() {
+    let device_senders: Vec<(String, mpsc::Sender<Message>)> = {
+        let devices = manager.devices.lock().await;
+        devices
+            .iter()
+            .map(|(dongle_id, device_connection)| (dongle_id.clone(), device_connection.sender.clone()))
+            .collect()
+    };
+
+    for (dongle_id, device_sender) in &device_senders {
         tracing::trace!("Sending ping to {}", &dongle_id);
-        if let Err(e) = device_connection.sender.send(Message::Ping(Vec::new())).await {
+        if let Err(e) = device_sender.send(Message::Ping(Vec::new())).await {
             tracing::trace!("Failed to send ping to device {}: {}", dongle_id, e);
         }
     }
-    for (dongle_id, device_connection) in devices.iter_mut() {
+    for (dongle_id, device_sender) in device_senders {
         if let Ok(Some(latest_msg)) = DMQM::find_latest_msg(db, &dongle_id).await {
-            if let Err(e) = device_connection.sender.send(Message::Text(latest_msg.json_rpc_request.to_string())).await {
+            if let Err(e) = device_sender.send(Message::Text(latest_msg.json_rpc_request.to_string())).await {
                 tracing::error!("Failed to send jsonrpc msg to device {}: {}", dongle_id, e);
             }
             if _entities::device_msg_queues::Entity::delete_by_id(latest_msg.id).exec(db).await.is_err() {
