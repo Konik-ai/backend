@@ -3,7 +3,7 @@
 	url = https://github.com/MoreTore/minikeyvalue.git
 [submodule "frontend"]
 	path = frontend
-	url = https://github.com/MoreTore/connect.git
+	url = https://github.com/Konik-ai/Stable.git
 [submodule "openpilot"]
 	path = openpilot
 	url = https://github.com/MoreTore/openpilot.git
