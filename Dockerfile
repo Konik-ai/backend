@@ -24,11 +24,17 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Bun (JS runtime and package manager)
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- --default-toolchain 1.88.0 -y
 
 # Ensure that the Rust environment is available in the current session
 ENV PATH="/root/.cargo/bin:${PATH}"
+ENV CC=clang
+ENV CXX=clang++
 # Set up a Cargo cache directory
 ENV CARGO_HOME=/usr/local/cargo
 RUN mkdir -p $CARGO_HOME
@@ -49,10 +55,10 @@ RUN pip3 install --no-cache-dir -r fetch/requirements.txt
 # Copy the frontend directory separately to support install_deps.sh
 COPY frontend/ frontend/
 
-# Set SHELL environment variable to fix pnpm error
+# Set SHELL environment variable (still bash, but pnpm no longer relevant)
 ENV SHELL=/bin/bash
 
-# Install Node.js dependencies
+# Install JavaScript/TypeScript dependencies in frontend with Bun via install_deps.sh
 RUN /bin/bash -c "./install_deps.sh"
 
 # Install Rust tools
@@ -65,10 +71,11 @@ COPY migration/ migration/
 COPY Cargo.toml Cargo.lock ./
 
 # Create an empty src/main.rs if your package needs one.
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+RUN mkdir -p src && echo \"fn main() {}\" > src/main.rs
 
 # Pre-fetch all dependencies (this creates a cache layer)
 RUN cargo fetch
+RUN cargo update
 
 # Now copy the entire source code
 COPY . .
