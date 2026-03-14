@@ -6,4 +6,4 @@
 	url = https://github.com/Konik-ai/Stable.git
 [submodule "openpilot"]
 	path = openpilot
-	url = https://github.com/MoreTore/openpilot.git
+	url = https://github.com/commaai/openpilot.git
