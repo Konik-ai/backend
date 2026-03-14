@@ -38,6 +38,7 @@ pub async fn upload_bootlogs(
 
     let full_url = common::mkv_helpers::get_mkv_file_url(&file_key);
 
+    let start = Instant::now();
     let mut buffer = BytesMut::new();
     let mut stream = body.into_data_stream();
     while let Some(chunk) = stream.next().await {
@@ -47,7 +48,12 @@ pub async fn upload_bootlogs(
                 buffer.extend_from_slice(&data);
             }
             Err(e) => {
-                tracing::warn!("Error reading request body: {}", e);
+                tracing::warn!(
+                    "Error reading request body after {} bytes in {:.2?}: {}",
+                    buffer.len(),
+                    start.elapsed(),
+                    e
+                );
                 return Ok((StatusCode::BAD_REQUEST, "Error reading request body"));
             }
         }
@@ -149,6 +155,7 @@ pub async fn upload_crash(
 
     let full_url = common::mkv_helpers::get_mkv_file_url(&file_key);
 
+    let start = Instant::now();
     let mut buffer = BytesMut::new();
     let mut stream = body.into_data_stream();
     while let Some(chunk) = stream.next().await {
@@ -158,7 +165,12 @@ pub async fn upload_crash(
                 buffer.extend_from_slice(&data);
             }
             Err(e) => {
-                tracing::warn!("Error reading request body: {}", e);
+                tracing::warn!(
+                    "Error reading request body after {} bytes in {:.2?}: {}",
+                    buffer.len(),
+                    start.elapsed(),
+                    e
+                );
                 return Ok((StatusCode::BAD_REQUEST, "Error reading request body"));
             }
         }
@@ -250,7 +262,12 @@ pub async fn upload_driving_logs(
                 buffer.extend_from_slice(&data);
             }
             Err(e) => {
-                tracing::warn!("Error reading request body: {}", e);
+                tracing::warn!(
+                    "Error reading request body after {} bytes in {:.2?}: {}",
+                    buffer.len(),
+                    start.elapsed(),
+                    e
+                );
                 return Ok((StatusCode::BAD_REQUEST, "Error reading request body"));
             }
         }

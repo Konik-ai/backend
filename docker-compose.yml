@@ -16,6 +16,19 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - redisdata:/data
+    logging:
+      driver: "json-file"
+      options:
+        mode: "non-blocking"
+        max-size: "10m"
+        max-file: "3"
+
   minikeyvalue:
     build:
       context: ./minikeyvalue
@@ -43,7 +56,7 @@ services:
       - "3112:3112"
     depends_on:
       - db
-      # - redis
+      - redis
       - minikeyvalue
     env_file:
       - .env
@@ -75,5 +88,6 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
   cargo-cache:
   connect-target:

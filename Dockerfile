@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     nodejs \
     python3 \
     python3-pip \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bun (JS runtime and package manager)

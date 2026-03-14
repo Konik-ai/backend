@@ -26,6 +26,24 @@ use crate::{
 // Alias for HMAC-SHA256
 type HmacSha256 = Hmac<Sha256>;
 
+fn env_nonempty(key: &str) -> Option<String> {
+    match env::var(key) {
+        Ok(v) if !v.trim().is_empty() => Some(v),
+        _ => None,
+    }
+}
+
+fn upload_base_url() -> String {
+    // If you're proxying API traffic via something with short request timeouts (e.g. Cloudflare),
+    // large PUT uploads to `/connectincoming/...` can get cut off mid-body. In that case, point
+    // `UPLOAD_ENDPOINT` at a DNS-only (non-proxied) origin hostname for uploads.
+    let base = env_nonempty("UPLOAD_ENDPOINT")
+        .or_else(|| env_nonempty("API_ENDPOINT"))
+        .expect("API_ENDPOINT env variable not set or is empty");
+
+    base.trim_end_matches('/').to_string()
+}
+
 #[derive(Deserialize)]
 struct UploadUrlQuery {
     path: String,
@@ -312,7 +330,7 @@ async fn get_upload_url(
 
     let upload_url = format!(
         "{}/connectincoming/{}/{}",
-        env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
+        upload_base_url(),
         device_model.dongle_id,
         transform_route_string(&params.path)
     );
@@ -392,7 +410,7 @@ async fn upload_urls_handler(
         .map(|path: &String| UrlResponse {
             url: format!(
                 "{}/connectincoming/{dongle_id}/{}?sig={token}",
-                env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set"),
+                upload_base_url(),
                 transform_route_string(path),
             ),
         })

@@ -39,6 +39,8 @@ https://github.com/MoreTore/connect-killer/blob/4b9be8252688df5672448b1139da4b4a
 create openssl keys for your domain and put them into self_signed_certs folder. See here https://github.com/MoreTore/connect-killer/blob/4b9be8252688df5672448b1139da4b4a71c554dc/src/app.rs#L151-L158
 More changes to hard coded values need to be changed to get the frontend working. More work needs to be done to make it easier.
 
+If large uploads to `/connectincoming/...` are failing mid-transfer (common when the API domain is proxied and has short request timeouts), set `UPLOAD_ENDPOINT` in `.env` to a DNS-only (non-proxied) origin hostname and leave `API_ENDPOINT` as-is.
+
 run docker compose up --build
 
 ## SMART disk alerts on the host
