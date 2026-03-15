@@ -1373,6 +1373,55 @@ async fn delete_location(
 }
 
 
+async fn clear_nav_destination(
+    auth: MyJWT,
+    State(ctx): State<AppContext>,
+    Path(dongle_id): Path<String>,
+) -> Result<Response, loco_rs::Error> {
+    use crate::controllers::ws::JsonRpcRequest;
+
+    let mut active_device;
+    if let Some(device_model) = auth.device_model {
+        active_device = device_model.into_active_model();
+    } else if let Some(user_model) = auth.user_model {
+        let device_model = if !user_model.superuser {
+            DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?
+        } else {
+            DM::find_device(&ctx.db, &dongle_id).await?
+        };
+        active_device = device_model.into_active_model();
+    } else {
+        return Ok((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
+    }
+
+    let mut locations: Vec<SavedLocation> =
+        if let Some(locations_json) = active_device.locations.as_ref() {
+            serde_json::from_value(locations_json.clone()).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+    for loc in locations.iter_mut() {
+        loc.next = false;
+    }
+    active_device.locations = ActiveValue::Set(Some(serde_json::to_value(locations)?));
+
+    let clear_msg = JsonRpcRequest {
+        method: "setNavDestination".to_string(),
+        params: Some(serde_json::json!({ "latitude": 0, "longitude": 0, "place_name": null, "place_details": null })),
+        ..Default::default()
+    };
+    DMQM::insert_msg(&ctx.db, &dongle_id, clear_msg).await?;
+
+    match active_device.update(&ctx.db).await {
+        Ok(_) => Ok((StatusCode::OK, Json(json!({ "success": true }))).into_response()),
+        Err(e) => {
+            tracing::error!("Failed to clear nav destination: {}", e);
+            Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Failed to clear" }))).into_response())
+        }
+    }
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("v1")
@@ -1414,7 +1463,7 @@ pub fn routes() -> Routes {
         )
         .add(
             "/navigation/:dongle_id/next",
-            get(get_next_destination),
+            get(get_next_destination).delete(clear_nav_destination),
         )
         .add("/iceservers", get(get_ice_servers))
 }
