@@ -1,9 +1,15 @@
-[submodule "minikeyvalue"]
-	path = minikeyvalue
-	url = https://github.com/MoreTore/minikeyvalue.git
+[submodule "capnproto-rust"]
+	path = capnproto-rust
+	url = https://github.com/MoreTore/capnproto-rust
 [submodule "frontend"]
 	path = frontend
 	url = https://github.com/Konik-ai/Stable.git
+[submodule "minikeyvalue"]
+	path = minikeyvalue
+	url = https://github.com/MoreTore/minikeyvalue.git
+[submodule "my-comma-auth"]
+	path = my-comma-auth
+	url = https://github.com/MoreTore/my-comma-auth.git
 [submodule "openpilot"]
 	path = openpilot
 	url = https://github.com/commaai/openpilot.git
