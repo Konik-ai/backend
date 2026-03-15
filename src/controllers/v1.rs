@@ -992,13 +992,10 @@ async fn set_destination(
     use crate::controllers::ws::JsonRpcRequest;
 
     let mut active_device;
-    let mut is_online = false;
     if let Some(device_model) = auth.device_model {
-        is_online = device_model.online;
         active_device = device_model.into_active_model();
     } else if let Some(user_model) = auth.user_model {
         let device_model = DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?;
-        is_online = device_model.online;
         active_device = device_model.into_active_model();
     } else {
         return Ok((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
@@ -1030,7 +1027,7 @@ async fn set_destination(
             loc.longitude = destination.longitude;
             //loc.save_type = "recent".to_string();
             loc.modified = chrono::Utc::now().timestamp_millis().to_string();
-            loc.next = !is_online;
+            loc.next = true;
             location_found = true;
             break;
         }
@@ -1048,7 +1045,7 @@ async fn set_destination(
             save_type: "recent".to_string(),
             label: Some(destination.place_name),
             modified: chrono::Utc::now().timestamp_millis().to_string(),
-            next: !is_online,
+            next: true,
         };
         locations.push(new_location);
     }
@@ -1062,7 +1059,6 @@ async fn set_destination(
             response = serde_json::json!({
                 "success": true,
                 "dongle_id": dongle_id,
-                "saved_next": !is_online
             });
         } // Respond with success
         Err(e) => {
@@ -1082,58 +1078,56 @@ async fn set_destination(
 async fn get_next_destination(
     auth: MyJWT,
     State(ctx): State<AppContext>,
-    //Path(dongle_id): Path<String>,
+    Path(dongle_id): Path<String>,
 ) -> impl IntoResponse {
-    if auth.device_model.is_none() {
-        return (
-            StatusCode::BAD_REQUEST,
-            format::json("Only devices can use this endpoint."),
-        )
-            .into_response();
-    }
+    let (device_model, consume) = if let Some(device_model) = auth.device_model {
+        (device_model, true)
+    } else if let Some(user_model) = auth.user_model {
+        let device_model = if !user_model.superuser {
+            match DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await {
+                Ok(d) => d,
+                Err(_) => return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response(),
+            }
+        } else {
+            match DM::find_device(&ctx.db, &dongle_id).await {
+                Ok(d) => d,
+                Err(_) => return (StatusCode::NOT_FOUND, "Device not found").into_response(),
+            }
+        };
+        (device_model, false)
+    } else {
+        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    };
 
-    if let Some(mut device_model) = auth.device_model {
-        // Deserialize the current locations from the device model
-        if let Some(locations_json) = device_model.locations.as_ref() {
-            let mut locations: Vec<SavedLocation> =
-                serde_json::from_value(locations_json.clone()).unwrap_or_default();
+    if let Some(locations_json) = device_model.locations.as_ref() {
+        let mut locations: Vec<SavedLocation> =
+            serde_json::from_value(locations_json.clone()).unwrap_or_default();
 
-            // Find the next location and clone it
-            if let Some(next_location) = locations.iter_mut().find(|loc| loc.next) {
-                let cloned_location = next_location.clone();
-                // Clear the next flag in the location
+        if let Some(next_location) = locations.iter_mut().find(|loc| loc.next) {
+            let cloned_location = next_location.clone();
+
+            if consume {
                 next_location.next = false;
-
-                // Convert the device model to an active model
                 let mut active_device_model = device_model.into_active_model();
-
-                // Update the device model with the modified locations
                 active_device_model.locations =
                     ActiveValue::Set(Some(serde_json::to_value(&locations).unwrap()));
-
-                // Save the updated device model
                 if let Err(e) = active_device_model.update(&ctx.db).await {
                     tracing::error!("Failed to update device locations. DB Error: {}", e);
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format::json(serde_json::Value::Null),
-                    )
+                    return (StatusCode::INTERNAL_SERVER_ERROR, format::json(serde_json::Value::Null))
                         .into_response();
                 }
-
-                // Return the next location as the response
-                return Json(json!({
-                    "place_name": cloned_location.place_name,
-                    "place_details": cloned_location.place_details,
-                    "latitude": cloned_location.latitude,
-                    "longitude": cloned_location.longitude
-                }))
-                .into_response();
             }
+
+            return Json(json!({
+                "place_name": cloned_location.place_name,
+                "place_details": cloned_location.place_details,
+                "latitude": cloned_location.latitude,
+                "longitude": cloned_location.longitude
+            }))
+            .into_response();
         }
     }
 
-    // Return null if no next location is found
     format::json(serde_json::Value::Null).into_response()
 }
 
@@ -1378,6 +1372,7 @@ async fn delete_location(
     }
 }
 
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("v1")
@@ -1417,6 +1412,9 @@ pub fn routes() -> Routes {
                 .put(put_locations)
                 .delete(delete_location),
         )
-        .add("/navigation/:dongle_id/next", get(get_next_destination))
+        .add(
+            "/navigation/:dongle_id/next",
+            get(get_next_destination),
+        )
         .add("/iceservers", get(get_ice_servers))
 }
