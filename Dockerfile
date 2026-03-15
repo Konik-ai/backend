@@ -72,7 +72,7 @@ COPY migration/ migration/
 COPY Cargo.toml Cargo.lock ./
 
 # Create an empty src/main.rs if your package needs one.
-RUN mkdir -p src && echo \"fn main() {}\" > src/main.rs
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs
 
 # Pre-fetch all dependencies (this creates a cache layer)
 RUN cargo fetch
