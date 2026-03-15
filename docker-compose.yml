@@ -88,6 +88,10 @@ services:
 
 volumes:
   pgdata:
+    external: true
+    name: connect-killer_pgdata
   redisdata:
+    external: true
+    name: connect-killer_redisdata
   cargo-cache:
   connect-target:
