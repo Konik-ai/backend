@@ -1,3 +1,62 @@
-<html><body>
-not found :-(
-</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404: Page not found</title>
+  <style>
+    @font-face {
+      font-family: "MonumentExtended-Regular";
+      src: url("../assets/MonumentExtended-Regular.otf") format("opentype");
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "MonumentExtended-Ultrabold";
+      src: url("../assets/MonumentExtended-Ultrabold.otf") format("opentype");
+      font-weight: 800;
+      font-display: swap;
+    }
+    :root {
+      --bg: #0f1014;
+      --text: #e7e9f3;
+      --muted: #a3a7b6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(24px, 5vw, 48px) clamp(16px, 5vw, 40px);
+      text-align: center;
+    }
+    .wrapper {
+      width: min(520px, 100%);
+    }
+    .title {
+      margin: 0 0 12px;
+      font-family: "MonumentExtended-Ultrabold", "Inter", "Helvetica Neue", Arial, sans-serif;
+      font-size: clamp(28px, 8vw, 36px);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(15px, 4vw, 17px);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrapper">
+    <h1 class="title">404: Page not found</h1>
+    <p class="subtitle">Maybe you took a wrong turn?</p>
+  </main>
+</body>
+</html>
