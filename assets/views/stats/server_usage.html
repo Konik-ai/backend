@@ -7,64 +7,183 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-color: #181c20;
-            --text-color: #e3e6eb;
-            --card-bg: #23272e;
-            --card-border: #333a44;
-            --table-bg: #23272e;
-            --table-alt-bg: #20242a;
-            --primary: #6cb6ff;
-            --success: #4CAF50;
+            --bg-color: #0f1014;
+            --text-color: #e7e9f3;
+            --muted: #a3a7b6;
+            --input-bg: #1a1c23;
+            --input-border: #2a2f3a;
+            --card-bg: #16181f;
+            --card-border: #2a2f3a;
+            --table-bg: #16181f;
+            --table-alt-bg: #0f1014;
+            --primary: #cfd2ff;
+            --success: #9fb3ff;
             --warning: #FF9800;
             --danger: #FF5252;
             --info: #2196F3;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 20px;
+            padding: 8px;
+            font-size: 13px;
+            line-height: 1.3;
+        }
+
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            margin: -8px -8px 12px;
+            border-bottom: none;
+            background: var(--table-bg);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+        }
+
+        .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .home-link {
+            color: var(--text-color);
+            text-decoration: none;
             font-size: 14px;
-            line-height: 1.4;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .home-link img {
+            height: 20px;
+            width: auto;
+            display: block;
+        }
+
+        .home-link:hover {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .nav-link {
+            color: var(--text-color);
+            text-decoration: none;
+            font-size: 12px;
+            border: none;
+            border-radius: 999px;
+            padding: 5px 10px;
+            background: var(--table-bg);
+        }
+
+        .nav-link:hover {
+            background: var(--input-bg);
+            text-decoration: none;
+        }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 999px;
+            border: none;
+            background: var(--table-bg);
+            color: var(--text-color);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+        }
+
+        .icon-btn:hover {
+            background: var(--input-bg);
+        }
+
+        .icon-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        button {
+            background-color: var(--table-bg);
+            border: none;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 11px;
+            cursor: pointer;
+            white-space: nowrap;
+            color: var(--text-color);
+        }
+
+        button:hover {
+            background-color: var(--input-bg);
+        }
+
+        button:disabled,
+        button[disabled] {
+            background-color: #2f3543 !important;
+            color: #bcc2d4 !important;
+            box-shadow: inset 0 0 0 1px rgba(188, 194, 212, 0.28);
+            opacity: 1 !important;
+            cursor: not-allowed !important;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
         h1 {
             color: var(--text-color);
-            font-size: 28px;
-            margin-bottom: 8px;
+            font-size: clamp(24px, 3.4vw, 34px);
+            margin: 0;
             font-weight: 600;
+            text-align: center;
         }
 
         .timestamp {
-            color: #9ca3af;
-            font-size: 14px;
-            margin-bottom: 24px;
+            color: var(--muted);
+            font-size: clamp(14px, 2vw, 18px);
+            margin: 8px 0 0;
+            text-align: center;
+        }
+
+        .page-heading {
+            margin: 4px 0 16px;
         }
 
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: 12px;
+            margin-bottom: 12px;
         }
 
         .stat-card {
             background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: none;
+            border-radius: 14px;
+            padding: 12px;
         }
 
         .stat-card h3 {
-            margin: 0 0 16px 0;
+            margin: 0 0 10px 0;
             color: var(--text-color);
             font-size: 16px;
             font-weight: 600;
@@ -77,7 +196,7 @@
         }
 
         .stat-label {
-            color: #9ca3af;
+            color: var(--muted);
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -86,9 +205,9 @@
         .progress-bar {
             width: 100%;
             height: 8px;
-            background: #374151;
+            background: var(--input-bg);
             border-radius: 4px;
-            margin: 12px 0;
+            margin: 8px 0;
             overflow: hidden;
         }
 
@@ -104,14 +223,14 @@
 
         .progress-text {
             font-size: 12px;
-            color: #9ca3af;
+            color: var(--muted);
             margin-top: 4px;
         }
 
         .devices-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
+            gap: 12px;
         }
 
         .device-stat {
@@ -125,7 +244,7 @@
         }
 
         .device-stat .label {
-            color: #9ca3af;
+            color: var(--muted);
             font-size: 12px;
             text-transform: uppercase;
         }
@@ -149,7 +268,7 @@
             align-items: center;
             margin-bottom: 8px;
             padding: 8px 0;
-            border-bottom: 1px solid #374151;
+            border-bottom: none;
         }
 
         .network-item:last-child {
@@ -157,7 +276,7 @@
         }
 
         .network-label {
-            color: #9ca3af;
+            color: var(--muted);
             font-size: 13px;
         }
 
@@ -169,27 +288,34 @@
         .disk-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 16px;
+            margin-top: 10px;
+            background: var(--table-bg);
+            font-size: 12px;
         }
 
         .disk-table th,
         .disk-table td {
             padding: 12px;
             text-align: left;
-            border-bottom: 1px solid #374151;
+            border-bottom: none;
         }
 
         .disk-table th {
-            background: var(--table-alt-bg);
-            color: var(--text-color);
+            background: var(--table-bg);
+            color: var(--muted);
             font-weight: 600;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 12px;
+            text-transform: none;
+            letter-spacing: 0;
         }
 
         .disk-table td {
-            font-size: 13px;
+            font-size: 12px;
+            background: var(--table-bg);
+        }
+
+        .disk-table tr:nth-child(even) td {
+            background: var(--table-alt-bg);
         }
 
         .bytes {
@@ -201,7 +327,7 @@
         }
 
         .status-total {
-            color: var(--info);
+            color: var(--primary);
         }
 
         .toggle-container {
@@ -232,7 +358,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: var(--input-bg);
             transition: .4s;
             border-radius: 24px;
         }
@@ -244,13 +370,13 @@
             width: 18px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: var(--text-color);
             transition: .4s;
             border-radius: 50%;
         }
 
         input:checked + .slider {
-            background-color: #2196F3;
+            background-color: var(--primary);
         }
 
         input:checked + .slider:before {
@@ -269,15 +395,57 @@
             border-radius: 999px;
             font-size: 12px;
             font-weight: 600;
-            background: rgba(156, 163, 175, 0.15);
-            color: #9ca3af;
+            background: var(--table-bg);
+            box-shadow: inset 0 0 0 1px rgba(163, 167, 182, 0.18);
+            color: var(--muted);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 4px;
+            }
+
+            .site-header {
+                margin: -4px -4px 10px;
+            }
+
+            .header-inner {
+                padding: 8px 10px;
+            }
+
+            .header-actions {
+                gap: 4px;
+            }
+
+            .nav-link {
+                font-size: 11px;
+                padding: 4px 8px;
+            }
         }
     </style>
 </head>
 <body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="home-link" aria-label="Home">
+                <img src="/assets/assets/logo-konik.svg" onerror="this.onerror=null;this.src='/assets/logo-konik.svg';" alt="Konik.ai">
+            </a>
+            <div class="header-actions">
+                <a href="/cloudlogs" class="nav-link">Cloud Logs</a>
+                <a href="/stats/usage" class="nav-link">Server Stats</a>
+                <a href="/auth/logout" class="icon-btn" aria-label="Sign out" title="Sign out">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4v-2H6V5h4V3zm5.59 4.59L14.17 9l2 2H9v2h7.17l-2 2 1.42 1.41L20 12l-4.41-4.41z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </header>
     <div class="container">
-        <h1>Server Usage Statistics</h1>
-        <div class="timestamp">Server Time: {{ time }}</div>
+        <div class="page-heading">
+            <h1>Server Usage Statistics</h1>
+            <div class="timestamp">Server Time: <span id="server-time" data-raw-time="{{ time }}">{{ time }}</span></div>
+        </div>
 
         <div class="stats-grid">
 
@@ -342,7 +510,7 @@
                     </thead>
                     <tbody id="uploads-table-body">
                         <tr>
-                            <td colspan="6" style="color: #9ca3af;">Connecting...</td>
+                            <td colspan="6" style="color: var(--muted);">Connecting...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -430,6 +598,31 @@
     </div>
 
     <script>
+        function formatServerTime() {
+            const serverTimeEl = document.getElementById('server-time');
+            if (!serverTimeEl) return;
+
+            const raw = serverTimeEl.getAttribute('data-raw-time') || serverTimeEl.textContent || '';
+            if (!raw) return;
+
+            const normalized = raw.replace(/\.(\d{3})\d+(?=(Z|[+-]\d{2}:\d{2})$)/, '.$1');
+            const parsed = new Date(normalized);
+            if (Number.isNaN(parsed.getTime())) return;
+
+            serverTimeEl.textContent = parsed.toLocaleString([], {
+                year: 'numeric',
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            });
+            serverTimeEl.title = raw;
+        }
+
+        formatServerTime();
+
         // Format large numbers
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
@@ -457,8 +650,8 @@
                     datasets: [{
                         label: 'Total Miles',
                         data: cumulativeMilesData,
-                        borderColor: 'rgb(75, 192, 192)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        borderColor: '#cfd2ff',
+                        backgroundColor: 'rgba(207, 210, 255, 0.18)',
                         tension: 0.3,
                         fill: false
                     }]
@@ -469,9 +662,31 @@
                     scales: {
                         y: {
                             beginAtZero: true,
+                            grid: {
+                                color: 'rgba(42, 47, 58, 0.6)'
+                            },
+                            ticks: {
+                                color: '#a3a7b6'
+                            },
                             title: {
                                 display: true,
-                                text: 'Miles'
+                                text: 'Miles',
+                                color: '#a3a7b6'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(42, 47, 58, 0.4)'
+                            },
+                            ticks: {
+                                color: '#a3a7b6'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#e7e9f3'
                             }
                         }
                     }
@@ -512,8 +727,8 @@
                     datasets: [{
                         label: 'Total Devices',
                         data: cumulativeDevicesData,
-                        borderColor: 'rgb(255, 99, 132)',
-                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        borderColor: '#9fb3ff',
+                        backgroundColor: 'rgba(159, 179, 255, 0.2)',
                         tension: 0.3,
                         fill: false
                     }]
@@ -524,9 +739,31 @@
                     scales: {
                         y: {
                             beginAtZero: true,
+                            grid: {
+                                color: 'rgba(42, 47, 58, 0.6)'
+                            },
+                            ticks: {
+                                color: '#a3a7b6'
+                            },
                             title: {
                                 display: true,
-                                text: 'Device Count'
+                                text: 'Device Count',
+                                color: '#a3a7b6'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(42, 47, 58, 0.4)'
+                            },
+                            ticks: {
+                                color: '#a3a7b6'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#e7e9f3'
                             }
                         }
                     }
@@ -610,7 +847,7 @@
 
                 tbodyEl.innerHTML = '';
                 if (uploads.length === 0) {
-                    tbodyEl.innerHTML = '<tr><td colspan="6" style="color:#9ca3af;">No active uploads</td></tr>';
+                    tbodyEl.innerHTML = '<tr><td colspan="6" style="color:var(--muted);">No active uploads</td></tr>';
                     return;
                 }
 

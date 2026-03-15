@@ -5,60 +5,203 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Log Event Viewer</title>
   <style>
+    :root {
+      --bg: #0f1014;
+      --text: #e7e9f3;
+      --muted: #a3a7b6;
+      --primary: #cfd2ff;
+      --input-bg: #1a1c23;
+      --input-border: #2a2f3a;
+      --table-bg: #16181f;
+      --table-alt-bg: #0f1014;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background-color: #181c20;
-      color: #e3e6eb;
+      font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
       margin: 0;
-      padding: 16px;
+      padding: 8px;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      margin: -8px -8px 12px;
+      border-bottom: none;
+      background: var(--table-bg);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+    }
+    .page-content {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .home-link {
+      color: var(--text);
+      text-decoration: none;
       font-size: 14px;
-      line-height: 1.4;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      display: inline-flex;
+      align-items: center;
+    }
+    .home-link img {
+      height: 20px;
+      width: auto;
+      display: block;
+    }
+    .home-link:hover {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .nav-link {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 12px;
+      border: none;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--table-bg);
+    }
+    .nav-link:hover {
+      background: var(--input-bg);
+      text-decoration: none;
+    }
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: none;
+      background: var(--table-bg);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+    }
+    .icon-btn:hover {
+      background: var(--input-bg);
+    }
+    .icon-btn svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
     }
     select {
       min-width: 128px;
       padding: 6px 8px;
-      border: 1px solid #333a44;
-      border-radius: 3px;
+      border: none;
+      border-radius: 10px;
       font-size: 1em;
-      background: #23272e;
-      color: #e3e6eb;
-      margin-bottom: 12px;
+      background: var(--input-bg);
+      color: var(--text);
+      margin-bottom: 0;
     }
     select:focus {
-      border-color: #6cb6ff;
+      background: var(--input-border);
       outline: none;
     }
     pre {
-      background: #181c20;
+      background: var(--bg);
       padding: 1em;
-      border-radius: 4px;
+      border-radius: 12px;
       font-family: 'Fira Mono', 'Consolas', 'Menlo', monospace;
       font-size: 13px;
       margin: 0;
       white-space: pre-wrap;
       word-break: break-word;
-      color: #b3b8c3;
+      color: var(--muted);
     }
     b {
-      color: #6cb6ff;
+      color: var(--primary);
       font-size: 1.1em;
+    }
+    .ulog-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .log-panel {
+      background: var(--table-bg);
+      border-radius: 14px;
+      padding: 10px;
+      max-height: calc(100vh - 190px);
+      overflow: auto;
+    }
+    .log-panel pre {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
     }
     @media (max-width: 768px) {
       body { padding: 4px; font-size: 13px; }
+      .site-header { margin: -4px -4px 10px; }
+      .header-inner { padding: 8px 10px; }
+      .header-actions { gap: 4px; }
+      .nav-link {
+        font-size: 11px;
+        padding: 4px 8px;
+      }
       pre { font-size: 12px; }
+      .log-panel {
+        max-height: calc(100vh - 170px);
+      }
     }
   </style>
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
 </head>
 <body>
-    <b>log:</b>
-    <select>
-        <option value="">-- Select  event --</option>
-        {% for event in events %}
-          <option value="{{ event }}"{% if selected_event == event %} selected{% endif %}>{{ event }}</option>
-        {% endfor %}
-    </select>
-    <pre>{{ text }}</pre>
+    <header class="site-header">
+      <div class="header-inner">
+        <a href="/" class="home-link" aria-label="Home">
+          <img src="/assets/assets/logo-konik.svg" onerror="this.onerror=null;this.src='/assets/logo-konik.svg';" alt="Konik.ai">
+        </a>
+        <div class="header-actions">
+          <a href="/cloudlogs" class="nav-link">Cloud Logs</a>
+          <a href="/stats/usage" class="nav-link">Server Stats</a>
+          <a href="/auth/logout" class="icon-btn" aria-label="Sign out" title="Sign out">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4v-2H6V5h4V3zm5.59 4.59L14.17 9l2 2H9v2h7.17l-2 2 1.42 1.41L20 12l-4.41-4.41z"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </header>
+    <div class="page-content">
+      <div class="ulog-controls">
+        <b>Choose a log:</b>
+        <select>
+            <option value="">-- Select  event --</option>
+            {% for event in events %}
+              <option value="{{ event }}"{% if selected_event == event %} selected{% endif %}>{{ event }}</option>
+            {% endfor %}
+        </select>
+      </div>
+      {% if selected_event %}
+      <div class="log-panel">
+        <pre>{{ text }}</pre>
+      </div>
+      {% endif %}
+    </div>
     <script>
         $(document).ready(function() {
             $('select').change(function() {
