@@ -20,7 +20,14 @@ use super::v1_responses::*;
 use crate::{
     common,
     middleware::{auth::MyJWT, jwt},
-    models::{device_msg_queues::DMQM, devices::DM, routes::RM, segments::SM, users::UM},
+    models::{
+        authorized_users::Model as AUM,
+        device_msg_queues::DMQM,
+        devices::DM,
+        routes::RM,
+        segments::SM,
+        users::UM,
+    },
 };
 
 // Alias for HMAC-SHA256
@@ -627,12 +634,118 @@ async fn device_stats(
 }
 
 async fn device_users(
-    _auth: MyJWT,
-    State(_ctx): State<AppContext>,
-    Path(_dongle_id): Path<String>,
+    auth: MyJWT,
+    State(ctx): State<AppContext>,
+    Path(dongle_id): Path<String>,
 ) -> Result<Response> {
-    format::json(DeviceUsersResponse {
-        ..Default::default()
+    let Some(user_model) = auth.user_model else {
+        return loco_rs::controller::unauthorized("Unauthorized");
+    };
+
+    let device_model = if user_model.superuser {
+        DM::find_device(&ctx.db, &dongle_id).await?
+    } else {
+        DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await?
+    };
+
+    let mut users = vec![];
+
+    if let Some(owner_id) = device_model.owner_id {
+        if let Ok(owner) = UM::find_by_id(&ctx.db, owner_id).await {
+            users.push(DeviceUser {
+                email: owner.email.unwrap_or_else(|| owner.name),
+                permission: "owner".to_string(),
+            });
+        }
+    }
+
+    let shared_rows = crate::models::authorized_users::Entity::find()
+        .filter(crate::models::authorized_users::Column::DeviceDongleId.eq(dongle_id.clone()))
+        .all(&ctx.db)
+        .await?;
+
+    for row in shared_rows {
+        if let Ok(shared_user) = UM::find_by_id(&ctx.db, row.user_id).await {
+            users.push(DeviceUser {
+                email: shared_user.email.unwrap_or_else(|| shared_user.name),
+                permission: row.access_level,
+            });
+        }
+    }
+
+    format::json(users)
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+struct DeviceShareRequest {
+    email: String,
+}
+
+async fn add_user(
+    auth: MyJWT,
+    State(ctx): State<AppContext>,
+    Path(dongle_id): Path<String>,
+    Json(data): Json<DeviceShareRequest>,
+) -> Result<Response> {
+    let Some(user_model) = auth.user_model else {
+        return loco_rs::controller::unauthorized("Unauthorized");
+    };
+
+    let device_model = DM::find_device(&ctx.db, &dongle_id).await?;
+    if !user_model.superuser && device_model.owner_id != Some(user_model.id) {
+        return loco_rs::controller::unauthorized("Only device owners can share devices");
+    }
+
+    let target_user = UM::find_by_email(&ctx.db, data.email.trim()).await?;
+    if device_model.owner_id == Some(target_user.id) {
+        return format::json(GenericResponse {
+            success: true,
+            message: "User already has owner access".to_string(),
+        });
+    }
+
+    let params = crate::models::authorized_users::AuthorizeParams {
+        user_id: target_user.id,
+        device_dongle_id: dongle_id,
+    };
+
+    let already_authorized = AUM::is_user_authorized(&ctx.db, &params).await;
+    if !already_authorized {
+        AUM::add_authorization(&ctx.db, &params).await?;
+    }
+
+    format::json(GenericResponse {
+        success: true,
+        message: "Device shared successfully".to_string(),
+    })
+}
+
+async fn del_user(
+    auth: MyJWT,
+    State(ctx): State<AppContext>,
+    Path(dongle_id): Path<String>,
+    Json(data): Json<DeviceShareRequest>,
+) -> Result<Response> {
+    let Some(user_model) = auth.user_model else {
+        return loco_rs::controller::unauthorized("Unauthorized");
+    };
+
+    let device_model = DM::find_device(&ctx.db, &dongle_id).await?;
+    if !user_model.superuser && device_model.owner_id != Some(user_model.id) {
+        return loco_rs::controller::unauthorized("Only device owners can unshare devices");
+    }
+
+    let target_user = UM::find_by_email(&ctx.db, data.email.trim()).await?;
+    let params = crate::models::authorized_users::AuthorizeParams {
+        user_id: target_user.id,
+        device_dongle_id: dongle_id,
+    };
+
+    AUM::remove_authorization(&ctx.db, &params).await?;
+
+    format::json(GenericResponse {
+        success: true,
+        message: "Device unshared successfully".to_string(),
     })
 }
 
@@ -1278,6 +1391,8 @@ pub fn routes() -> Routes {
         .add("/devices/:dongle_id/firehose", post(set_firehose))
         .add(".1/devices/:dongle_id/stats", get(device_stats))
         .add("/devices/:dongle_id/users", get(device_users))
+        .add("/devices/:dongle_id/add_user", post(add_user))
+        .add("/devices/:dongle_id/del_user", post(del_user))
         .add("/devices/:dongle_id", patch(update_device_alias))
         .add(".1/devices/:dongle_id", get(device_info))
         .add(

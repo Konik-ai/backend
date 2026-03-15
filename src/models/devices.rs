@@ -1,10 +1,12 @@
 pub use super::_entities::devices::{self, ActiveModel, Column, Entity, Model as DM};
+use crate::models::_entities::authorized_users as au;
 use crate::controllers::v2::DeviceRegistrationParams;
 use chrono::prelude::Utc;
 use loco_rs::prelude::*;
 use sea_orm::entity::prelude::*;
 use sea_orm::{ActiveValue, QueryOrder, TransactionTrait};
 use sea_orm::{DbBackend, Statement};
+use std::collections::HashSet;
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -110,13 +112,45 @@ impl DM {
     /// Returns a list of devices associated with the user.
     /// Can be empty if the user has no devices
     pub async fn find_user_devices(db: &DatabaseConnection, user_id: i32) -> Vec<DM> {
-        Entity::find()
+        let mut owned_devices = Entity::find()
             .filter(Column::OwnerId.eq(user_id))
             .order_by_desc(Column::Online)
             .order_by_desc(Column::LastAthenaPing)
             .all(db)
             .await
-            .expect("Database query failed")
+            .expect("Database query failed");
+
+        let shared_rows = au::Entity::find()
+            .filter(au::Column::UserId.eq(user_id))
+            .all(db)
+            .await
+            .expect("Database query failed");
+
+        let shared_ids: Vec<String> = shared_rows
+            .into_iter()
+            .map(|row| row.device_dongle_id)
+            .collect();
+
+        if shared_ids.is_empty() {
+            return owned_devices;
+        }
+
+        let mut shared_devices = Entity::find()
+            .filter(Column::DongleId.is_in(shared_ids))
+            .filter(Column::OwnerId.ne(user_id))
+            .order_by_desc(Column::Online)
+            .order_by_desc(Column::LastAthenaPing)
+            .all(db)
+            .await
+            .expect("Database query failed");
+
+        owned_devices.append(&mut shared_devices);
+
+        let mut seen = HashSet::new();
+        owned_devices
+            .into_iter()
+            .filter(|d| seen.insert(d.dongle_id.clone()))
+            .collect()
     }
 
     pub async fn find_user_device(
@@ -124,8 +158,27 @@ impl DM {
         user_id: i32,
         dongle_id: &str,
     ) -> Result<Option<DM>, DbErr> {
-        Entity::find()
+        let owned = Entity::find()
             .filter(Column::OwnerId.eq(user_id))
+            .filter(Column::DongleId.eq(dongle_id))
+            .one(db)
+            .await?;
+
+        if owned.is_some() {
+            return Ok(owned);
+        }
+
+        let shared = au::Entity::find()
+            .filter(au::Column::UserId.eq(user_id))
+            .filter(au::Column::DeviceDongleId.eq(dongle_id))
+            .one(db)
+            .await?;
+
+        if shared.is_none() {
+            return Ok(None);
+        }
+
+        Entity::find()
             .filter(Column::DongleId.eq(dongle_id))
             .one(db)
             .await
@@ -136,12 +189,9 @@ impl DM {
         user_id: i32,
         dongle_id: &str,
     ) -> Result<DM, DbErr> {
-        Entity::find()
-            .filter(Column::OwnerId.eq(user_id))
-            .filter(Column::DongleId.eq(dongle_id))
-            .one(db)
+        Self::find_user_device(db, user_id, dongle_id)
             .await?
-            .ok_or_else(|| DbErr::RecordNotFound("Device not found for that owner".to_string()))
+            .ok_or_else(|| DbErr::RecordNotFound("Device not found for that user".to_string()))
     }
 
     pub async fn find_all_devices(db: &DatabaseConnection) -> Vec<DM> {

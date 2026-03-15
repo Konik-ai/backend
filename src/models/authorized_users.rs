@@ -57,6 +57,7 @@ impl super::_entities::authorized_users::Model {
         let permission = ActiveModel {
             user_id: ActiveValue::Set(params.user_id),
             device_dongle_id: ActiveValue::Set(params.device_dongle_id.to_string()),
+            access_level: ActiveValue::Set("read".to_string()),
             ..Default::default()
         }
         .insert(&txn)
