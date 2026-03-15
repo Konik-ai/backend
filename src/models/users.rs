@@ -111,6 +111,14 @@ impl super::_entities::users::Model {
             .await?
         {
             Some(user) => {
+                // Update email if the user doesn't have one yet
+                if user.email.is_none() && params.email.is_some() {
+                    let mut active: users::ActiveModel = user.into();
+                    active.email = ActiveValue::Set(params.email.clone());
+                    let user = active.update(&txn).await?;
+                    txn.commit().await?;
+                    return Ok(user);
+                }
                 txn.commit().await?;
                 return Ok(user);
             }

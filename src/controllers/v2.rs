@@ -253,6 +253,29 @@ pub struct GithubUser {
 }
 
 #[derive(Deserialize, Serialize)]
+struct GithubEmail {
+    email: String,
+    primary: bool,
+    verified: bool,
+}
+
+async fn fetch_github_primary_email(client: &reqwest::Client, access_token: &str) -> Option<String> {
+    let response = client
+        .get("https://api.github.com/user/emails")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("User-Agent", "Connect")
+        .send()
+        .await
+        .ok()?;
+    let emails: Vec<GithubEmail> = response.json().await.ok()?;
+    emails
+        .iter()
+        .find(|e| e.primary && e.verified)
+        .or_else(|| emails.iter().find(|e| e.verified))
+        .map(|e| e.email.clone())
+}
+
+#[derive(Deserialize, Serialize)]
 struct GithubTokenResponse {
     access_token: String,
 }
@@ -321,11 +344,16 @@ pub async fn get_auth(
         }
     };
 
+    let email = match github_user.email {
+        Some(e) => Some(e),
+        None => fetch_github_primary_email(&client, &token_response.access_token).await,
+    };
+
     let user = UM::with_oauth(
         &ctx.db,
         &OAuthUserParams {
             name: format!("github_{}", github_user.id),
-            email: None,
+            email,
         },
     )
     .await?;
@@ -423,11 +451,16 @@ async fn post_auth(
         }
     };
 
+    let email = match github_user.email {
+        Some(e) => Some(e),
+        None => fetch_github_primary_email(&client, &token_response.access_token).await,
+    };
+
     let user = UM::with_oauth(
         &ctx.db,
         &OAuthUserParams {
             name: format!("github_{}", github_user.id),
-            email: None,
+            email,
         },
     )
     .await?;

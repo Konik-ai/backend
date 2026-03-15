@@ -696,7 +696,19 @@ async fn add_user(
         return loco_rs::controller::unauthorized("Only device owners can share devices");
     }
 
-    let target_user = UM::find_by_email(&ctx.db, data.email.trim()).await?;
+    let email = data.email.trim();
+    let target_user = match UM::find_by_email(&ctx.db, email).await {
+        Ok(user) => user,
+        Err(_) => match UM::find_by_name(&ctx.db, email).await {
+            Ok(user) => user,
+            Err(_) => {
+                return format::json(serde_json::json!({
+                    "error": true,
+                    "description": "User not found. They must have an account first."
+                }));
+            }
+        },
+    };
     if device_model.owner_id == Some(target_user.id) {
         return format::json(GenericResponse {
             success: true,
