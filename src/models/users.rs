@@ -83,6 +83,14 @@ impl super::_entities::users::Model {
         user.ok_or_else(|| ModelError::EntityNotFound)
     }
 
+    pub async fn find_by_email(db: &DatabaseConnection, email: &str) -> ModelResult<Self> {
+        let user = users::Entity::find()
+            .filter(users::Column::Email.eq(email.to_string()))
+            .one(db)
+            .await?;
+        user.ok_or_else(|| ModelError::EntityNotFound)
+    }
+
     pub async fn find_by_id(db: &DatabaseConnection, id: i32) -> ModelResult<Self> {
         let user = users::Entity::find()
             .filter(users::Column::Id.eq(id))
