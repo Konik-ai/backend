@@ -5,18 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
       :root {
-        --bg-color: #181c20;
-        --text-color: #e3e6eb;
-        --input-bg: #23272e;
-        --input-border: #333a44;
-        --table-bg: #23272e;
-        --table-alt-bg: #20242a;
-        --primary: #6cb6ff; 
-        --success: #4CAF50;
+        --bg-color: #0f1014;
+        --text-color: #e7e9f3;
+        --muted: #a3a7b6;
+        --input-bg: #1a1c23;
+        --input-border: #2a2f3a;
+        --table-bg: #16181f;
+        --table-alt-bg: #0f1014;
+        --primary: #cfd2ff; 
+        --success: #9fb3ff;
         --danger: #FF5252;
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
         background-color: var(--bg-color);
         color: var(--text-color);
         margin: 0;
@@ -24,16 +25,105 @@
         font-size: 13px;
         line-height: 1.3;
       }
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        margin: -8px -8px 12px;
+        border-bottom: none;
+        background: var(--table-bg);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+      }
+      .header-inner {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .home-link {
+        color: var(--text-color);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        display: inline-flex;
+        align-items: center;
+      }
+      .home-link img {
+        height: 20px;
+        width: auto;
+        display: block;
+      }
+      .home-link:hover {
+        color: var(--primary);
+        text-decoration: none;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .nav-link {
+        color: var(--text-color);
+        text-decoration: none;
+        font-size: 12px;
+        border: none;
+        border-radius: 999px;
+        padding: 5px 10px;
+        background: var(--table-bg);
+      }
+      .nav-link:hover {
+        background: var(--input-bg);
+        text-decoration: none;
+      }
+      .icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        border: none;
+        background: var(--table-bg);
+        color: var(--text-color);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+      }
+      .icon-btn:hover {
+        background: var(--input-bg);
+        text-decoration: none;
+      }
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+      }
       input {
         width: 100%;
         max-width: 500px;
         padding: 6px 8px;
         margin-bottom: 12px;
-        border: 1px solid var(--input-border);
-        border-radius: 3px;
+        border: none;
+        border-radius: 10px;
         font-size: 13px;
         background: var(--input-bg);
         color: var(--text-color);
+      }
+      .results-banner {
+        margin: 0 0 10px;
+        padding: 2px 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .results-banner strong {
+        color: var(--text-color);
+        font-weight: 700;
       }
       h1, h2, h3 {
         margin: 8px 0;
@@ -51,14 +141,14 @@
       th, td {
         padding: 4px 6px;
         text-align: left;
-        border-bottom: 1px solid var(--input-border);
+        border-bottom: none;
         white-space: nowrap;
         vertical-align: middle;
       }
       th {
         background-color: var(--table-bg);
         font-weight: 600;
-        color: #b3b8c3;
+        color: var(--muted);
         position: sticky;
         top: 0;
         z-index: 10;
@@ -78,9 +168,9 @@
       }
       button {
         background-color: var(--table-bg);
-        border: 1px solid var(--input-border);
-        border-radius: 3px;
-        padding: 3px 6px;
+        border: none;
+        border-radius: 999px;
+        padding: 4px 10px;
         font-size: 11px;
         cursor: pointer;
         white-space: nowrap;
@@ -88,27 +178,60 @@
       }
       button.delete {
         background-color: #3a2323;
-        border-color: #5a2a2a;
         color: #ff6b6b;
       }
       button.upload {
         background-color: #23313a;
-        border-color: #2a3a5a;
-        color: #6cb6ff;
+        color: var(--primary);
+      }
+      button:disabled,
+      button[disabled] {
+        background-color: #2f3543 !important;
+        color: #bcc2d4 !important;
+        box-shadow: inset 0 0 0 1px rgba(188, 194, 212, 0.28);
+        opacity: 1 !important;
+        cursor: not-allowed !important;
       }
       details {
         margin-bottom: 8px;
-        border: 1px solid var(--input-border);
-        border-radius: 3px;
-        background-color: var(--bg-color);
+        border: none;
+        border-radius: 14px;
+        background-color: var(--table-bg);
+        overflow: hidden;
       }
       details summary {
-        padding: 6px 8px;
+        padding: 10px 12px;
         background-color: var(--table-bg);
         cursor: pointer;
         font-weight: 600;
-        border-bottom: 1px solid var(--input-border);
-        color: #b3b8c3;
+        border-bottom: none;
+        border-radius: 14px;
+        color: var(--muted);
+      }
+      details > :not(summary) {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+      details > :last-child {
+        padding-bottom: 12px;
+      }
+      details hr {
+        border: none;
+        height: 1px;
+        background: rgba(163, 167, 182, 0.18);
+        margin: 6px 0 10px;
+      }
+      .tab-content {
+        padding: 0 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .tab-content hr {
+        margin: 0;
+      }
+      .tab-meta {
+        color: var(--muted);
       }
       progress {
         height: 8px;
@@ -117,7 +240,7 @@
       }
       .timestamp {
         font-size: 11px;
-        color: #b3b8c3;
+        color: var(--muted);
       }
       .green-text, .text-success { color: var(--success); }
       .red-text, .text-danger { color: var(--danger); }
@@ -128,15 +251,28 @@
         border-radius: 50%;
         margin-right: 4px;
       }
-      .status-online { background-color: #4CAF50; }
+      .status-online { background-color: var(--primary); }
       .status-offline { background-color: #FF5252; }
       .scrollable-container {
         overflow-x: auto;
         max-width: 100%;
-        background: var(--bg-color);
+        background: transparent;
+        border-radius: 10px;
       }
       @media (max-width: 768px) {
         body { padding: 4px; }
+        .site-header { margin: -4px -4px 10px; }
+        .header-inner {
+          padding: 8px;
+          gap: 6px;
+        }
+        .header-actions {
+          gap: 4px;
+        }
+        .nav-link {
+          font-size: 11px;
+          padding: 4px 8px;
+        }
         th, td { padding: 2px 4px; }
         
         /* Make tables horizontally scrollable on mobile */
@@ -188,7 +324,15 @@
         }
         
         #uploadQueueModal .modal-content {
-          max-width: 98vw;
+          width: 98vw;
+          max-height: 88vh;
+        }
+        #uploadQueueModal .modal-close {
+          width: 28px;
+          height: 28px;
+          min-width: 28px;
+          min-height: 28px;
+          font-size: 18px;
         }
         
         #uploadQueueContent table {
@@ -245,6 +389,127 @@
         max-height: 70vh;
         background: #000;
       }
+      #uploadQueueModal .modal-content {
+        width: min(760px, 94vw);
+        max-width: 760px;
+        max-height: 86vh;
+        padding: 0;
+        border: none;
+        border-radius: 16px;
+        overflow: hidden;
+        background: linear-gradient(180deg, var(--table-bg) 0%, var(--bg-color) 100%);
+      }
+      #uploadQueueModal .modal-close {
+        align-self: flex-end;
+        margin: 8px 12px 2px 0;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        min-width: 30px;
+        min-height: 30px;
+        border-radius: 999px;
+        border: none;
+        background: var(--table-bg);
+        color: var(--text-color);
+        font-size: 20px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #uploadQueueModal .modal-close:hover {
+        background: var(--input-bg);
+      }
+      .upload-queue-body {
+        width: 100%;
+        padding: 10px 14px 14px;
+        overflow: auto;
+      }
+      #uploadQueueContent {
+        width: 100%;
+      }
+      #uploadQueueContent table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      #uploadQueueContent th,
+      #uploadQueueContent td {
+        padding: 8px;
+        border-bottom: none;
+        vertical-align: middle;
+      }
+      #uploadQueueContent th {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      #uploadQueueContent td {
+        color: var(--text-color);
+      }
+      .queue-file-link {
+        display: inline-block;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .queue-progress-cell {
+        min-width: 180px;
+      }
+      .queue-progress-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .queue-progress-wrap progress {
+        width: 110px;
+      }
+      .queue-status {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .queue-status.uploading {
+        background: rgba(159, 179, 255, 0.14);
+        color: var(--success);
+      }
+      .queue-status.pending {
+        background: rgba(163, 167, 182, 0.14);
+        color: var(--muted);
+      }
+      .queue-status.complete {
+        background: rgba(207, 210, 255, 0.16);
+        color: var(--primary);
+      }
+      .upload-queue-empty,
+      .upload-queue-loading {
+        padding: 18px 10px;
+        text-align: center;
+      }
+      .upload-queue-empty-title,
+      .upload-queue-loading-title {
+        margin: 0;
+        font-size: 16px;
+        color: var(--text-color);
+      }
+      .upload-queue-empty-subtitle {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .header-clickable {
+        cursor: pointer;
+        user-select: none;
+      }
+      .header-clickable:hover {
+        color: var(--text-color);
+      }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script>
@@ -265,6 +530,10 @@
               el.textContent = localString + ' (' + rel + ')';
             }
         });
+
+          formatRouteStartTimes();
+          initDistanceUnitToggle();
+          formatCompactNumbers();
         
         // Add play buttons for .ts and .hevc links
         document.querySelectorAll('a').forEach(function(link) {
@@ -294,21 +563,79 @@
           });
         });
         
-        // --- Get network status for online devices ---
-        loadNetworkStatusForOnlineDevices();
       });
 
-      function setFirehose(dongle_id, firehose) {
-        fetch(`{{ api_host | safe }}/v1/devices/${dongle_id}/firehose`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ firehose })
-        })
+      function formatRouteStartTimes() {
+        document.querySelectorAll('.route-start-time').forEach(function(el) {
+          const raw = el.getAttribute('data-iso') || el.textContent || '';
+          const date = new Date(raw);
+          if (Number.isNaN(date.getTime())) {
+            return;
+          }
+          el.textContent = date.toLocaleString();
+          el.title = raw;
+        });
+      }
+
+      function formatDistanceValue(km, unit) {
+        const value = unit === 'mi' ? km * 0.621371 : km;
+        return value.toFixed(2);
+      }
+
+      function formatCompactNumbers() {
+        const formatter = new Intl.NumberFormat(undefined, {
+          notation: 'compact',
+          maximumFractionDigits: 2
+        });
+
+        document.querySelectorAll('.compact-number').forEach(function(el) {
+          const raw = el.getAttribute('data-value') || el.textContent || '';
+          const value = Number(raw);
+          if (Number.isNaN(value)) {
+            return;
+          }
+          el.textContent = formatter.format(value);
+          el.title = raw;
+        });
+      }
+
+      function updateDistanceCells(unit) {
+        document.querySelectorAll('.route-distance').forEach(function(cell) {
+          const km = Number(cell.getAttribute('data-km'));
+          if (Number.isNaN(km)) {
+            return;
+          }
+          cell.textContent = formatDistanceValue(km, unit);
+        });
+
+        const header = document.getElementById('distanceHeader');
+        if (header) {
+          header.textContent = unit === 'mi' ? 'Distance (mi)' : 'Distance (km)';
+          header.setAttribute('data-unit', unit);
+          header.title = 'Click to toggle km/mi';
+        }
+      }
+
+      function initDistanceUnitToggle() {
+        const header = document.getElementById('distanceHeader');
+        if (!header) {
+          return;
+        }
+
+        const savedUnit = localStorage.getItem('route-distance-unit');
+        const unit = savedUnit === 'mi' ? 'mi' : 'km';
+        updateDistanceCells(unit);
+
+        header.addEventListener('click', function() {
+          const currentUnit = header.getAttribute('data-unit') === 'mi' ? 'mi' : 'km';
+          const nextUnit = currentUnit === 'km' ? 'mi' : 'km';
+          localStorage.setItem('route-distance-unit', nextUnit);
+          updateDistanceCells(nextUnit);
+        });
       }
 
       function deleteDevice(dongle_id) {
-        if (confirm("Are you sure you want to delete this device? You will need to repair the device.")) {
+        if (confirm("Are you sure you want to delete this device?")) {
           fetch(`{{ api_host | safe }}/connectdata/delete/${dongle_id}`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
@@ -496,72 +823,19 @@
         }
       }
 
-      async function getNetworkMetered(dongleId) {
-        try {
-          const apiUrl = `{{ api_host | safe }}/ws/${dongleId}`;
-          const payload = {
-            jsonrpc: "2.0",
-            method: "getNetworkMetered",
-            id: 0
-          };
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(payload)
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const data = await response.json();
-          return data.result ? 'metered' : 'unmetered';
-        } catch (e) {
-          console.error('Error fetching network type:', e);
-          return '';
-        }
-      }
-
-      // --- Load network status for online devices ---
-      async function loadNetworkStatusForOnlineDevices() {
-        const onlineDevices = document.querySelectorAll('#table_devices tr[data-device-id]');
-        
-        // Collect all online devices and their network cells
-        const onlineDeviceData = [];
-        for (const row of onlineDevices) {
-          const dongleId = row.getAttribute('data-device-id');
-          const isOnline = row.getAttribute('data-device-online') === 'true';
-          
-          if (isOnline) {
-            const networkCell = row.querySelector('.network-status');
-            if (networkCell) {
-              networkCell.textContent = 'Loading...';
-              onlineDeviceData.push({ dongleId, networkCell });
-            }
-          }
-        }
-        
-        // Dispatch all network status requests at once
-        const networkPromises = onlineDeviceData.map(({ dongleId }) => 
-          getNetworkMetered(dongleId)
-        );
-        
-        // Wait for all requests to complete
-        const networkResults = await Promise.all(networkPromises);
-        
-        // Update all network cells with results
-        onlineDeviceData.forEach(({ networkCell }, index) => {
-          networkCell.textContent = networkResults[index] || 'Unknown';
-        });
-      }
-
       // --- Show upload queue in modal ---
       let uploadQueueModalInterval = null;
       
       function showUploadQueueModal(dongleId) {
         const modal = document.getElementById('uploadQueueModal');
         const content = document.getElementById('uploadQueueContent');
-        const title = document.getElementById('uploadQueueTitle');
-        
-        title.textContent = `Upload Queue - ${dongleId}`;
-        content.innerHTML = 'Loading...';
+
+        if (uploadQueueModalInterval) {
+          clearInterval(uploadQueueModalInterval);
+          uploadQueueModalInterval = null;
+        }
+
+        content.innerHTML = '<div class="upload-queue-loading"><p class="upload-queue-loading-title">Loading queue...</p></div>';
         modal.style.display = 'flex';
         
         // Load initial data
@@ -589,11 +863,11 @@
         const queue = await listUploadQueue(dongleId);
         
         if (queue.length === 0) {
-          content.innerHTML = '<p>No files in upload queue</p>';
+          content.innerHTML = '<div class="upload-queue-empty"><p class="upload-queue-empty-title">No files in upload queue</p><p class="upload-queue-empty-subtitle">Start an upload from a segment row and it will appear here.</p></div>';
           return;
         }
         
-        let html = '<table style="width: 100%; font-size: 12px;"><thead><tr><th>File</th><th>Progress</th><th>Status</th></tr></thead><tbody>';
+        let html = '<table><thead><tr><th>File</th><th>Progress</th><th>Status</th></tr></thead><tbody>';
         
         queue.forEach(item => {
           const fileName = item.path.split('/').pop();
@@ -601,15 +875,18 @@
           
           const progress = Math.round(item.progress * 100);
           const status = item.current ? (progress >= 100 ? 'Complete' : 'Uploading') : 'Pending';
+          const statusClass = status.toLowerCase();
 
           html += `
             <tr>
-                <td><a href="/?onebox=${dongleId}|${routeName}">${routeName}/${fileName}</a></td>
-              <td>
-                <progress value="${progress}" max="100" style="width: 100px;"></progress>
-                ${progress}%
+                <td><a class="queue-file-link" href="/?onebox=${dongleId}|${routeName}" title="${routeName}/${fileName}">${routeName}/${fileName}</a></td>
+              <td class="queue-progress-cell">
+                <span class="queue-progress-wrap">
+                  <progress value="${progress}" max="100"></progress>
+                  <span>${progress}%</span>
+                </span>
               </td>
-              <td>${status}</td>
+              <td><span class="queue-status ${statusClass}">${status}</span></td>
             </tr>
           `;
         });
@@ -1000,115 +1277,79 @@
     }
   </script>
 
-  <title>{{ onebox }} - konik.ai Admin</title>
+  <title>{{ onebox }} - Stable Useradmin</title>
   </head>
 <body>
-  <header>
-    <div class="header-container">
-      <a href="/" class="logo">konik.ai Admin</a>
-      <a href="/cloudlogs" class="btn btn-primary">Cloud Logs</a>
-      <a href="/stats/usage" class="btn btn-primary">Server Statistics</a>
-      <a href="/auth/logout" class="btn btn-secondary">Sign out</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="home-link" aria-label="Home">
+        <img src="/assets/assets/logo-konik.svg" onerror="this.onerror=null;this.src='/assets/logo-konik.svg';" alt="Konik.ai">
+      </a>
+      <div class="header-actions">
+        <a href="/cloudlogs" class="nav-link">Cloud Logs</a>
+        <a href="/stats/usage" class="nav-link">Server Stats</a>
+        <a href="/auth/logout" class="icon-btn" aria-label="Sign out" title="Sign out">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4v-2H6V5h4V3zm5.59 4.59L14.17 9l2 2H9v2h7.17l-2 2 1.42 1.41L20 12l-4.41-4.41z"/>
+          </svg>
+        </a>
+      </div>
     </div>
   </header>
   <div class="container">
     <form class="search-form">
       <input name="onebox" class="search-input" placeholder="Search for username, route, or dongle ID" value="{{ onebox }}">
     </form>
-    <div class="info-card">
-      <div class="info-card-header">
-        <h3 class="info-card-title">Results: {{ onebox }}</h3>
-      </div>
-    </div>
-    {% if users.defined is defined %}
-    <details>
-      <summary>Users</summary>
-      <hr>
-      <table id="table_users">
-        <tbody>
-          <tr>
-            <td>name</td>
-            <td>created at</td>
-            <td>updated at</td>
-            <td>id</td>
-            <td>identity</td>
-            <td>points</td>
-            <td>superuser</td>
-          </tr>
-          {% for user in users.users %}
-          <tr>
-            <td><a href="/?onebox={{ user.name }}">{{ user.name }}</a></td>
-            <td>{{ user.created_at }}</td>
-            <td>{{ user.updated_at }}</td>
-            <td>{{ user.id }}</td>
-            <td>{{ user.identity }}</td>
-            <td>{{ user.points }}</td>
-            <td>{{ user.superuser }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
+    {% if dongle_id is defined and dongle_id %}
+    <div class="results-banner">Results: <strong>{{ dongle_id }}</strong></div>
     {% endif %}
     {% if devices.defined is defined %}
     <details>
       <summary>Devices</summary>
-      <hr>
-      <div class="scrollable-container">
-        <table id="table_devices">
-          <tbody>
-            <tr>
-              <td>upload queue</td>
-              <td>firehose</td>
-              <td>dongle_id</td>
-              <td>serial</td>
-              <td>server storage used</td>
-              <td>alias</td>
-              <td>last_athena_ping</td>
-              <td>network type</td>
-              <td>delete</td>
+      <div class="tab-content">
+        <hr>
+        <div class="scrollable-container">
+          <table id="table_devices">
+            <tbody>
+              <tr>
+                <td>Name</td>
+                <td>Upload queue</td>
+                <td>Dongle ID</td>
+                <td>Serial Number</td>
+                <td>Last Ping</td>
+                <td></td>
+              </tr>
+            {% for device in devices.devices %}
+            <tr data-device-id="{{ device.dongle_id }}" data-device-online="{{ device.online }}">
+              <td>{{ device.alias }}</td>
+              <td><button class="upload" style="padding: 3px 10px; font-size: 12px;" onclick="showUploadQueueModal('{{ device.dongle_id }}')">Upload Queue</button></td>
+              <td><a href="/?onebox={{ device.dongle_id }}">{{ device.dongle_id }}</a></td>
+              <td>{{ device.serial }}</td>
+              {% if device.online %}
+              <td><span class="timestamp" style="color: var(--primary);" data-timestamp="{{ device.last_athena_ping }}"></span></td>
+              {% else %}
+              <td><span class="timestamp" style="color: red;" data-timestamp="{{ device.last_athena_ping }}"></span></td>
+              {% endif %}
+              <td><button onclick="deleteDevice('{{ device.dongle_id }}')" title="Unpair and Delete Device Data">🗑️</button></td>
             </tr>
-          {% for device in devices.devices %}
-          <tr data-device-id="{{ device.dongle_id }}" data-device-online="{{ device.online }}">
-            <td><button class="upload" style="padding: 3px 10px; font-size: 12px;" onclick="showUploadQueueModal('{{ device.dongle_id }}')">Upload Queue</button></td>
-            <td>
-              <button onclick="setFirehose('{{ device.dongle_id }}', !{{ device.firehose }})" {% if device.firehose %}style="background-color: #2d4a2d; border-color: #4a7c4a; color: #4CAF50;"{% endif %}>
-                {% if device.firehose %}Disable Firehose 🔥{% else %}Enable Firehose 🔥{% endif %}
-              </button>
-            </td>
-            <td><a href="/?onebox={{ device.dongle_id }}">{{ device.dongle_id }}</a></td>
-            <td>{{ device.serial }}</td>
-            <td>{{ device.server_storage / 1000000000 }} GB</td>
-            <td>{{ device.alias }}</td>
-            {% if device.online %}
-            <td><span class="timestamp" style="color: green;" data-timestamp="{{ device.last_athena_ping }}"></span></td>
-            {% else %}
-            <td><span class="timestamp" style="color: red;" data-timestamp="{{ device.last_athena_ping }}"></span></td>
-            {% endif %}
-
-            {% if device.online %}
-            <td class="network-status">Loading...</td>
-            {% else %}
-            <td class="network-status">Offline</td>
-            {% endif %}
-            <td><button onclick="deleteDevice('{{ device.dongle_id }}')" title="Unpair and Delete Device Data">🗑️</button></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
       </div>
     </details>
     {% endif %}
     {% if segments.defined is defined %}
     <details>
       <summary>Segments</summary>
-      <hr>
-      <b>dongle id:</b> <a href="/?onebox={{ dongle_id }}">{{ dongle_id }}</a> <b> status: {% if device_online %}<span class="green-text">Online</span>{% else %}<span class="red-text">Offline</span>{% endif %}</b><br>
-      <hr>
-  <button id="uploadAllButton" onclick="uploadAllFiles()" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All Files</button>
-      <b>segments:</b><br>
-      <div class="scrollable-container">
-        <table id="data-table">
+      <div class="tab-content">
+        <hr>
+        <div class="tab-meta"><b>dongle id:</b> <a href="/?onebox={{ dongle_id }}">{{ dongle_id }}</a> <b> status: {% if device_online %}<span class="green-text">Online</span>{% else %}<span class="red-text">Offline</span>{% endif %}</b></div>
+        <hr>
+        <button id="uploadAllButton" onclick="uploadAllFiles()" {% if not device_online %}disabled title="Device offline" style="opacity:0.5; cursor:not-allowed;"{% endif %}>Upload All Files</button>
+        <div class="tab-meta"><b>segments:</b></div>
+        <div class="scrollable-container">
+          <table id="data-table">
           <thead>
             <tr>
               <th>#</th>
@@ -1135,121 +1376,136 @@
           </tr>
         </tbody>
         {% endfor %}
-      </table>
+        </table>
+        </div>
       </div>
     </details>
     {% endif %}
     {% if routes.defined is defined %}
     <details>
       <summary>Routes</summary>
-      <hr>
-      <table id="table_routes">
-        <tbody>
-          <tr>
-            <td></td>
-            <td>start_time</td>
-            <td>route_name</td>
-            <td>miles</td>
-            <td>maxlog</td>
-            <td>maxqlog</td>
-            <td>maxqcamera</td>
-            <td>platform</td>
-            <td>git_remote</td>
-            <td>git_branch</td>
-            <td>git_commit</td>
-          </tr>
-          {% for route in routes.routes %}
-          <tr>
-            <td><button onclick="deleteRoute('{{ route.fullname }}')">Delete Route</button></td>
-            <td>{{ route.start_time }}</td>
-            <td><a href="/?onebox={{ route.fullname }}">{{ route.fullname }}</a></td>
-            <td>{{ route.length }}</td>
-            <td>{{ route.maxlog }}</td>
-            <td>{{ route.maxqlog }}</td>
-            <td>{{ route.maxqcamera }}</td>
-            <td>{{ route.platform }}</td>
-            <td>{{ route.git_remote }}</td>
-            <td>{{ route.git_branch }}</td>
-            <td>{{ route.git_commit }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="tab-content">
+        <hr>
+        <div class="scrollable-container">
+          <table id="table_routes">
+            <tbody>
+              <tr>
+                <td>Start Time</td>
+                <td>Route</td>
+                <td id="distanceHeader" class="header-clickable" data-unit="km">Distance (km)</td>
+                <td>maxlog</td>
+                <td>maxqlog</td>
+                <td>maxqcamera</td>
+                <td>Platform</td>
+                <td>Remote</td>
+                <td>Branch</td>
+                <td>Commit Hash</td>
+                <td></td>
+              </tr>
+              {% for route in routes.routes %}
+              <tr>
+                <td><span class="route-start-time" data-iso="{{ route.start_time }}">{{ route.start_time }}</span></td>
+                <td><a href="/?onebox={{ route.fullname }}">{{ route.fullname }}</a></td>
+                <td class="route-distance" data-km="{{ route.length }}">{{ route.length }}</td>
+                <td class="compact-number" data-value="{{ route.maxlog }}">{{ route.maxlog }}</td>
+                <td class="compact-number" data-value="{{ route.maxqlog }}">{{ route.maxqlog }}</td>
+                <td class="compact-number" data-value="{{ route.maxqcamera }}">{{ route.maxqcamera }}</td>
+                <td>{{ route.platform }}</td>
+                <td>{{ route.git_remote }}</td>
+                <td>{{ route.git_branch }}</td>
+                <td>{{ route.git_commit }}</td>
+                <td><button onclick="deleteRoute('{{ route.fullname }}')" title="Delete Route">🗑️</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </details>
     {% endif %}
     {% if device_users.defined is defined %}
     <details>
       <summary>Authorized Users</summary>
-      <hr>
-      <table id="table_device_users">
-        <tbody>
-          <tr>
-            <td>email</td>
-            <td></td>
-            <td>access_level</td>
-            <td></td>
-          </tr>
-          {% for device_user in device_users %}
-          <tr>
-            <td><a href="/?onebox={{ device_user.email }}">{{ device_user.email }}</a></td>
-            <td></td>
-            <td>{{ device_user.access_level }}</td>
-            <td><a onclick="unbind('{{ device_user.dongle_id }}');" style="color: red; text-decoration: underline; cursor: pointer;">remove</a></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="tab-content">
+        <hr>
+        <div class="scrollable-container">
+          <table id="table_device_users">
+            <tbody>
+              <tr>
+                <td>Email</td>
+                <td></td>
+                <td>Access Level</td>
+                <td></td>
+              </tr>
+              {% for device_user in device_users %}
+              <tr>
+                <td><a href="/?onebox={{ device_user.email }}">{{ device_user.email }}</a></td>
+                <td></td>
+                <td>{{ device_user.access_level }}</td>
+                <td><a onclick="unbind('{{ device_user.dongle_id }}');" style="color: red; text-decoration: underline; cursor: pointer;">Remove Access</a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </details>
     {% endif %}
     {% if bootlogs.defined is defined %}
     <details>
       <summary>Boot Logs</summary>
-      <hr>
-      <table id="table_bootlogs">
-        <tbody>
-          <tr>
-            <td>Parsed Boot log</td>
-            <td>download</td>
-          </tr>
-          {% for bootlog in bootlogs.bootlogs %}
-          <tr>
-            <td><a href="{{ bootlog.unlog_url }}">{{ bootlog.date_time }}</a></td>
-            <td><a href="{{ bootlog.bootlog_url }}">download</a></td>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="tab-content">
+        <hr>
+        <div class="scrollable-container">
+          <table id="table_bootlogs">
+            <tbody>
+              <tr>
+                <td>Parsed Boot Log</td>
+                <td>Download Log</td>
+              </tr>
+              {% for bootlog in bootlogs.bootlogs %}
+              <tr>
+                <td><a href="{{ bootlog.unlog_url }}">{{ bootlog.date_time }}</a></td>
+                <td><a href="{{ bootlog.bootlog_url }}">download</a></td>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </details>
     {% endif %}
     {% if cloudlogs.defined %}
     <details>
       <summary>Cloud Logs Cache Summary</summary>
-      <hr>
-      <table id="table_cloudlogs_summary">
-        <tbody>
-          {% for branch, modules in cloudlogs.cloudlogs %}
-          <tr>
-            <td colspan="2" style="padding: 0; border: none;">
-              <details>
-                <summary><b>Branch:</b> {{ branch }}</summary>
-                <table style="width: 100%;">
-                  {% for module, count in modules %}
-                  <tr>
-                    <td><b>{{ module }}</b> ({{ count }} logs)</td>
-                    <td><button onclick="loadModuleLogs('{{ dongle_id }}', '{{ branch }}', '{{ module }}')">Load Logs</button><div id="logs-{{ branch }}-{{ module }}"></div></td>
-                  </tr>
-                  {% endfor %}
-                </table>
-              </details>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="tab-content">
+        <hr>
+        <div class="scrollable-container">
+          <table id="table_cloudlogs_summary">
+            <tbody>
+              {% for branch, modules in cloudlogs.cloudlogs %}
+              <tr>
+                <td colspan="2" style="padding: 0; border: none;">
+                  <details>
+                    <summary><b>Branch:</b> {{ branch }}</summary>
+                    <table style="width: 100%;">
+                      {% for module, count in modules %}
+                      <tr>
+                        <td><b>{{ module }}</b> ({{ count }} logs)</td>
+                        <td><button onclick="loadModuleLogs('{{ dongle_id }}', '{{ branch }}', '{{ module }}')">Load Logs</button><div id="logs-{{ branch }}-{{ module }}"></div></td>
+                      </tr>
+                      {% endfor %}
+                    </table>
+                  </details>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </details>
     {% endif %}
   </div>
-  <hr>
-  <a href="/auth/logout">Sign out</a>
   <div id="videoModal" class="modal" onclick="if(event.target===this)closeVideoModal()">
     <div class="modal-content">
       <button class="modal-close" onclick="closeVideoModal()">&times;</button>
@@ -1257,10 +1513,11 @@
     </div>
   </div>
   <div id="uploadQueueModal" class="modal" onclick="if(event.target===this)closeUploadQueueModal()">
-    <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-content">
       <button class="modal-close" onclick="closeUploadQueueModal()">&times;</button>
-      <h3 id="uploadQueueTitle">Upload Queue</h3>
-      <div id="uploadQueueContent">Loading...</div>
+      <div class="upload-queue-body">
+        <div id="uploadQueueContent">Loading...</div>
+      </div>
     </div>
   </div>
 </body>
