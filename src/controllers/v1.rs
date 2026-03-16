@@ -1084,7 +1084,9 @@ async fn get_next_destination(
     Path(dongle_id): Path<String>,
 ) -> impl IntoResponse {
     let (device_model, consume) = if let Some(device_model) = auth.device_model {
-        (device_model, true)
+        // Never consume on read — only DELETE /next clears the active destination.
+        // Consuming on GET caused the device to self-clear its route 15 s after receiving it.
+        (device_model, false)
     } else if let Some(user_model) = auth.user_model {
         let device_model = if !user_model.superuser {
             match DM::ensure_user_device(&ctx.db, user_model.id, &dongle_id).await {
