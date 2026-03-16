@@ -1016,16 +1016,19 @@ async fn set_destination(
             Vec::new()
         };
 
+    // Clear next flag from all existing locations before setting the new one
+    for loc in locations.iter_mut() {
+        loc.next = false;
+    }
+
     // Check if the label exists and update, otherwise add the new location
     let mut location_found = false;
     for loc in locations.iter_mut() {
         if loc.label == Some(destination.place_name.clone()) {
-            // Update existing location
             loc.place_name = destination.place_name.clone();
             loc.place_details = destination.place_details.clone();
             loc.latitude = destination.latitude;
             loc.longitude = destination.longitude;
-            //loc.save_type = "recent".to_string();
             loc.modified = chrono::Utc::now().timestamp_millis().to_string();
             loc.next = true;
             location_found = true;
@@ -1128,7 +1131,7 @@ async fn get_next_destination(
         }
     }
 
-    format::json(serde_json::Value::Null).into_response()
+    (StatusCode::OK, Json(serde_json::Value::Null)).into_response()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
