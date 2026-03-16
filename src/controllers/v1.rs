@@ -1427,6 +1427,47 @@ async fn clear_nav_destination(
     }
 }
 
+/// POST /v1/navigation/:dongle_id/favorite
+/// Queues an Athena call to write the address into the device's MapboxFavorites param.
+/// Uses POST so the browser never issues a PUT/DELETE preflight.
+#[derive(Serialize, Deserialize)]
+struct SetFavoriteRequest {
+    address: String,
+    save_type: String, // "home" | "work" | "favorite"
+    label: Option<String>,
+}
+
+async fn set_nav_favorite(
+    auth: MyJWT,
+    State(ctx): State<AppContext>,
+    Path(dongle_id): Path<String>,
+    Json(body): Json<SetFavoriteRequest>,
+) -> Result<Response, loco_rs::Error> {
+    use crate::controllers::ws::JsonRpcRequest;
+
+    if auth.user_model.is_none() && auth.device_model.is_none() {
+        return Ok((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
+    }
+    if let Some(ref user) = auth.user_model {
+        if !user.superuser {
+            DM::ensure_user_device(&ctx.db, user.id, &dongle_id).await?;
+        }
+    }
+
+    let msg = JsonRpcRequest {
+        method: "setNavFavorite".to_string(),
+        params: Some(serde_json::json!({
+            "address":   body.address,
+            "save_type": body.save_type,
+            "label":     body.label,
+        })),
+        ..Default::default()
+    };
+    DMQM::insert_msg(&ctx.db, &dongle_id, msg).await?;
+
+    Ok((StatusCode::OK, Json(json!({ "success": true }))).into_response())
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("v1")
@@ -1469,6 +1510,10 @@ pub fn routes() -> Routes {
         .add(
             "/navigation/:dongle_id/next",
             get(get_next_destination).delete(clear_nav_destination),
+        )
+        .add(
+            "/navigation/:dongle_id/favorite",
+            post(set_nav_favorite),
         )
         .add("/iceservers", get(get_ice_servers))
 }
