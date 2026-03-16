@@ -198,5 +198,12 @@ pub async fn proxy_mapbox(
     *response.status_mut() = status;
     *response.headers_mut() = headers;
 
+    // Remove CORS headers from the upstream response so Loco's CORS middleware
+    // is the sole source of those headers and avoids duplicate values.
+    response.headers_mut().remove("access-control-allow-origin");
+    response.headers_mut().remove("access-control-allow-methods");
+    response.headers_mut().remove("access-control-allow-headers");
+    response.headers_mut().remove("access-control-expose-headers");
+
     Ok(response)
 }
