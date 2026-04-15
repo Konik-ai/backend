@@ -391,12 +391,14 @@ pub async fn login(
 
 pub async fn logout() -> impl IntoResponse {
     let mut headers = HeaderMap::new();
-    // Expire the jwt cookie
-    headers.insert(
+
+    headers.append(
         header::SET_COOKIE,
-        HeaderValue::from_static("jwt=; Path=/; HttpOnly; Secure; Max-Age=0; SameSite=Lax;"),
+        HeaderValue::from_static(
+            "jwt=; Domain=.konik.ai; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
+        ),
     );
-    // Redirect to login page
+
     (StatusCode::FOUND, headers, Redirect::to("/login"))
 }
 
