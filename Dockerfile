@@ -96,5 +96,3 @@ EXPOSE 3223
 # HTTP
 EXPOSE 3111
 EXPOSE 3112
-
-CMD ./start_connect.sh & ./start_useradmin.sh & wait

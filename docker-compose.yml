@@ -48,13 +48,29 @@ services:
 
   connect:
     build: .
+    image: connect-app
     restart: unless-stopped
-    ports:
-      - "3222:3222"
-      - "3223:3223"
-      - "3111:3111"
-      - "3112:3112"
+    command: /bin/sh -c "./start_connect.sh"
+    env_file:
+      - .env
+    network_mode: "host"
+    volumes:
+      - ./frontend/dist:/usr/src/connect/frontend/dist:ro
+      - ./assets:/usr/src/connect/assets
+      - cargo-cache:/usr/local/cargo
+    logging:
+      driver: "json-file"
+      options:
+        mode: "non-blocking"
+        max-size: "10m"
+        max-file: "10"
+
+  useradmin:
+    image: connect-app
+    restart: unless-stopped
+    command: /bin/sh -c "./start_useradmin.sh"
     depends_on:
+      - connect
       - db
       - redis
       - minikeyvalue
