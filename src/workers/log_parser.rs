@@ -3,9 +3,8 @@ use capnp::{
     message::ReaderOptions,
     serialize::{read_message, write_message},
 };
-use ffmpeg_next::{format as ffmpeg_format, Error as FfmpegError};
-use futures::stream::TryStreamExt; // for stream::TryStreamExt to use try_next
-use futures_util::StreamExt;
+use ffmpeg_next::format as ffmpeg_format;
+use futures::stream::TryStreamExt;
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageBuffer, Rgba};
 use loco_rs::prelude::*;
 use once_cell::sync::Lazy;
@@ -1007,29 +1006,31 @@ async fn upload_data(client: &Client, url: &str, body: Vec<u8>) {
     }
 }
 
-async fn get_qcam_duration(response: Response) -> Result<f32, FfmpegError> {
-    // Create a temporary file to store the video data
-    let temp_file: NamedTempFile = NamedTempFile::new().unwrap();
-    let mut temp_file_async = tokio::fs::File::from_std(temp_file.reopen().unwrap());
+async fn get_qcam_duration(response: Response) -> Result<f32, std::io::Error> {
+    let response = response
+        .error_for_status()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let temp_file = NamedTempFile::new()?;
+    let mut temp_file_async = tokio::fs::File::from_std(temp_file.reopen()?);
     let mut stream = response.bytes_stream();
 
-    while let Some(chunk) = stream.next().await {
-        match chunk {
-            Ok(chunk) => temp_file_async.write_all(&chunk).await.unwrap(),
-            Err(e) => {
-                tracing::error!("streaming error: {}", e.to_string());
-            }
-        }
+    while let Some(chunk) = stream
+        .try_next()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "qcam stream error");
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        })?
+    {
+        temp_file_async.write_all(&chunk).await?;
     }
 
-    // Close the file to ensure all data is written
-    temp_file_async.sync_all().await.unwrap();
+    temp_file_async.sync_all().await?;
 
-    // Use FFmpeg to open the file and get the duration
     ffmpeg_next::init()?;
     let context = ffmpeg_format::input(&temp_file.path())?;
-    let duration = context.duration() as f32 / 1_000_000.0;
-    Ok(duration)
+    Ok(context.duration() as f32 / 1_000_000.0)
 }
 
 fn handle_device_params<'a>(
