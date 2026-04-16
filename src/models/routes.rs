@@ -1,12 +1,23 @@
 pub use super::_entities::routes::{self, ActiveModel, Column, Entity, Model as RM};
-use chrono::offset;
 use chrono::prelude::Utc;
 use loco_rs::model::{ModelError, ModelResult};
 use loco_rs::prelude::*;
 use sea_orm::{
-    ActiveValue, DeleteResult, PaginatorTrait, QueryOrder, QuerySelect, TransactionTrait,
+    entity::prelude::*,
+    ActiveValue,
+    DbBackend,
+    DeleteResult,
+    Order,
+    PaginatorTrait,
+    QueryFilter,
+    QueryOrder,
+    QuerySelect,
+    QueryTrait,
+    Statement,
+    TransactionTrait,
 };
-use sea_orm::{DbBackend, Statement};
+
+use sea_orm::sea_query::{Expr, ExprTrait};
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -128,21 +139,27 @@ impl RM {
         limit: Option<u64>,
         offset: Option<u64>,
     ) -> ModelResult<Vec<RM>> {
-        let mut query = Entity::find().filter(Column::DeviceDongleId.eq(dongle_id));
+        let effective_time_sql = r#"
+            CASE
+                WHEN hpgps = TRUE THEN start_time_utc_millis
+                ELSE (EXTRACT(EPOCH FROM created_at) * 1000)::bigint
+            END
+        "#;
 
-        if let Some(from_time) = from {
-            query = query.filter(Column::StartTimeUtcMillis.gte(from_time));
-        }
-        if let Some(to_time) = to {
-            query = query.filter(Column::StartTimeUtcMillis.lte(to_time));
-        }
-        if let Some(offset_val) = offset {
-            query = query.offset(offset_val);
-        }
-        if let Some(limit_val) = limit {
-            query = query.limit(limit_val);
-        }
-        let routes = query.order_by_desc(Column::CreatedAt).all(db).await?;
+        let routes = Entity::find()
+            .filter(Column::DeviceDongleId.eq(dongle_id))
+            .apply_if(from, |q, from_time| {
+                q.filter(Expr::cust(effective_time_sql).gte(from_time))
+            })
+            .apply_if(to, |q, to_time| {
+                q.filter(Expr::cust(effective_time_sql).lte(to_time))
+            })
+            .order_by(Expr::cust(effective_time_sql), Order::Desc)
+            .apply_if(offset, |q, offset| q.offset(offset))
+            .apply_if(limit, |q, limit| q.limit(limit))
+            .all(db)
+            .await?;
+
         Ok(routes)
     }
 
