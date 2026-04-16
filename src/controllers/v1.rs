@@ -31,6 +31,7 @@ use crate::{
 };
 
 // Alias for HMAC-SHA256
+#[allow(dead_code)]
 type HmacSha256 = Hmac<Sha256>;
 
 fn env_nonempty(key: &str) -> Option<String> {
@@ -1055,7 +1056,7 @@ async fn set_destination(
     // Serialize the updated locations back to JSON
     active_device.locations = ActiveValue::Set(Some(serde_json::to_value(locations)?));
 
-    let mut response;
+    let response;
     // Update the device model in the database
     match active_device.update(&ctx.db).await {
         Ok(_) => {
@@ -1267,6 +1268,7 @@ struct RTCIceServer {
     credential: String,
 }
 
+#[allow(dead_code, deprecated)]
 fn generate_turn_credentials(secret_key: &str) -> (String, String) {
     // Get the current UNIX timestamp (valid for 1 hour)
     let timestamp = SystemTime::now()
@@ -1287,8 +1289,6 @@ fn generate_turn_credentials(secret_key: &str) -> (String, String) {
 
 async fn get_ice_servers(_auth: MyJWT) -> Result<Json<Vec<RTCIceServer>>, StatusCode> {
     tracing::info!("Getting ICE servers");
-
-    let secret_key = env::var("TURN_SECRET_KEY").unwrap_or_else(|_| "default_secret".to_string());
 
     let ice_servers = vec![
         RTCIceServer {

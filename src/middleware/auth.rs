@@ -1,16 +1,15 @@
-use std::{collections::HashMap, env};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use axum::{
-    extract::{ws::WebSocketUpgrade, FromRef, FromRequestParts, Query},
-    http::{header, request::Parts, HeaderMap},
+    extract::{FromRef, FromRequestParts, Query},
+    http::{request::Parts, HeaderMap},
     response::{IntoResponse, Redirect},
 };
 use axum_extra::extract::cookie;
 //use eyre::Error;
 //use eyre::ErrReport;
-use futures_util::TryFutureExt;
-use loco_rs::{app::AppContext, config::JWT as JWTConfig, errors::Error, prelude::*};
+use loco_rs::{app::AppContext, prelude::*};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

@@ -63,7 +63,6 @@ pub async fn persist_param_value_counts(
             .map(|entry| (entry.key().clone(), *entry.value()))
             .collect();
 
-        let storage = storage.clone();
         tasks.push(async move {
             let formatted_path = format!("params/{}.json", param_name);
             let path = Path::new(&formatted_path);
@@ -126,7 +125,6 @@ pub async fn persist_device_params(
             .iter()
             .map(|kv| (kv.key().clone(), kv.value().clone()))
             .collect();
-        let storage = storage.clone();
         tasks.push(async move {
             let file_path = format!("params/devices/{}.json", device_id);
             let path = Path::new(&file_path);

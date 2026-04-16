@@ -1,8 +1,5 @@
-use async_compression::tokio::{bufread, write::BzEncoder};
-use capnp::{
-    message::ReaderOptions,
-    serialize::{read_message, write_message},
-};
+use async_compression::tokio::bufread;
+use capnp::message::ReaderOptions;
 use ffmpeg_next::format as ffmpeg_format;
 use futures::stream::TryStreamExt;
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageBuffer, Rgba};
@@ -26,7 +23,7 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::cereal::log_capnp::event as LogEvent;
-use crate::cereal::{legacy_capnp::nav_update::segment, log_capnp};
+use crate::cereal::log_capnp;
 use crate::common;
 use crate::models::_entities::{devices, routes, segments};
 
@@ -434,9 +431,10 @@ async fn update_route_info(
 ) -> worker::Result<()> {
     // First segment in route
     if let Some(first_seg) = segment_models.first() {
-        active_route_model.start_time = ActiveValue::Set(DateTime::from_timestamp_millis(
-            first_seg.start_time_utc_millis,
-        ));
+        active_route_model.start_time = ActiveValue::Set(
+            chrono::DateTime::from_timestamp_millis(first_seg.start_time_utc_millis)
+                .map(|dt| dt.naive_utc()),
+        );
         active_route_model.start_time_utc_millis =
             ActiveValue::Set(first_seg.start_time_utc_millis);
         active_route_model.start_lat = ActiveValue::Set(first_seg.start_lat);
@@ -454,9 +452,10 @@ async fn update_route_info(
         } else {
             last_seg
         };
-        active_route_model.end_time = ActiveValue::Set(DateTime::from_timestamp_millis(
-            last_seg.end_time_utc_millis,
-        ));
+        active_route_model.end_time = ActiveValue::Set(
+            chrono::DateTime::from_timestamp_millis(last_seg.end_time_utc_millis)
+                .map(|dt| dt.naive_utc()),
+        );
         active_route_model.end_time_utc_millis = ActiveValue::Set(last_seg.end_time_utc_millis);
         active_route_model.end_lat = ActiveValue::Set(last_seg.end_lat);
         active_route_model.end_lng = ActiveValue::Set(last_seg.end_lng);
@@ -480,15 +479,18 @@ async fn update_route_info(
                 calculated_start_time =
                     segment_model.start_time_utc_millis - (segment_model.number as i64 * 60000);
                 active_route_model.start_time_utc_millis = ActiveValue::Set(calculated_start_time);
-                active_route_model.start_time =
-                    ActiveValue::Set(DateTime::from_timestamp_millis(calculated_start_time));
+                active_route_model.start_time = ActiveValue::Set(
+                    chrono::DateTime::from_timestamp_millis(calculated_start_time)
+                        .map(|dt| dt.naive_utc()),
+                );
                 active_route_model.start_lat = ActiveValue::Set(segment_model.start_lat);
                 active_route_model.start_lng = ActiveValue::Set(segment_model.start_lng);
             }
 
-            active_route_model.end_time = ActiveValue::Set(DateTime::from_timestamp_millis(
-                segment_model.end_time_utc_millis,
-            ));
+            active_route_model.end_time = ActiveValue::Set(
+                chrono::DateTime::from_timestamp_millis(segment_model.end_time_utc_millis)
+                    .map(|dt| dt.naive_utc()),
+            );
             active_route_model.end_time_utc_millis =
                 ActiveValue::Set(segment_model.end_time_utc_millis);
             active_route_model.end_lat = ActiveValue::Set(segment_model.end_lat);
@@ -597,6 +599,7 @@ impl Default for QLogResult {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, Debug, Serialize)]
 struct StateData {
     state: String,
@@ -777,7 +780,7 @@ async fn parse_qlog(
 
                         writeln!(unlog_data, "{:#?}", event).ok();
                     }
-                    LogEvent::OnroadEvents(onroad_event) => {
+                    LogEvent::OnroadEvents(_onroad_event) => {
                         writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::SelfdriveState(selfdrive_state) => {
@@ -1042,7 +1045,7 @@ fn handle_device_params<'a>(
 ) {
     for entry in entries.iter() {
         if let Ok(key) = entry.get_key() {
-            let mut key_str = key.to_str().unwrap_or_default();
+            let key_str = key.to_str().unwrap_or_default();
             // Skip keys containing "key" or "Key"
             if key_str.contains("key")
                 || key_str.contains("Key")
@@ -1052,7 +1055,7 @@ fn handle_device_params<'a>(
                 continue;
             }
             if let Ok(value) = entry.get_value() {
-                let mut string = String::from_utf8(value.to_vec()).unwrap_or_default();
+                let string = String::from_utf8(value.to_vec()).unwrap_or_default();
                 if string.len() > 24 {
                     continue;
                 }

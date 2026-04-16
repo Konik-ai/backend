@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use loco_rs::prelude::*;
 
 pub struct Huggingface;

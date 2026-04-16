@@ -13,8 +13,6 @@
 //! ```sh
 //! cargo run task seed_data refresh:true
 //! ```
-use std::collections::BTreeMap;
-
 use loco_rs::{db, prelude::*};
 use migration::Migrator;
 

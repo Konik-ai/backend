@@ -1,23 +1,13 @@
-use chrono::{Duration, NaiveDateTime, ParseError, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use loco_rs::prelude::*;
-use regex::Regex;
 use reqwest::Client;
 use serde_json::from_str;
 use serde_json::Value;
-use std::collections::BTreeMap;
-use std::env;
-use std::path::Path;
-use sysinfo::Disks;
-use tower_http::trace;
 
 use crate::{
-    common::{mkv_helpers, re::*},
-    models::{devices::DM, routes::RM, segments::SM},
+    common::mkv_helpers,
+    models::{devices::DM, routes::RM},
 };
-
-fn parse_timestamp(timestamp: &str) -> Result<NaiveDateTime, ParseError> {
-    NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d--%H-%M-%S")
-}
 
 pub struct Cleaner;
 #[async_trait]
@@ -32,7 +22,7 @@ impl Task for Cleaner {
         println!("Task Cleaner generated");
 
         let client = Client::new();
-        let mut retention_minutes = 24 * 60 * 7; // keep for 7 days for debugging
+        let retention_minutes = 24 * 60 * 7; // keep for 7 days for debugging
 
         loop {
             let now: NaiveDateTime = Utc::now().naive_utc();

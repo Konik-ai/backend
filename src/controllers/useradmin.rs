@@ -8,7 +8,6 @@ use loco_rs::prelude::*;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sysinfo::Users;
 use tokio_util::io::StreamReader;
 extern crate url;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
@@ -16,7 +15,6 @@ use axum::response::{IntoResponse, Redirect};
 use std::{collections::HashMap, env, io::Cursor};
 
 use crate::{
-    cereal::log_capnp::event as LogEvent,
     common::{mkv_helpers, re::*},
     controllers::v2::get_auth,
     enforce_ownership_rule,
@@ -77,6 +75,18 @@ pub struct MasterTemplate {
     pub cloudlogs: Option<CloudlogsTemplate>,
 }
 
+
+// Function to get the event type name as a string based on the WhichReader
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/src/cereal/generated_event_type_names.rs"
+));
+
+pub fn get_event_name(event_type: &LogEvent::WhichReader) -> String {
+    generated_event_type_name(event_type)
+}
+
+
 pub async fn onebox_handler(
     auth: crate::middleware::auth::MyJWT,
     ViewEngine(v): ViewEngine<TeraView>,
@@ -98,15 +108,13 @@ pub async fn onebox_handler(
     let re = regex::Regex::new(&route_match_string).unwrap();
 
     let mut canonical_route_name: Option<String> = None;
-    let mut dongle_id: String;
-    let mut timestamp: Option<String> = None;
+    let dongle_id: String;
 
     // Check for route or dongle ID
     if let Some(caps) = re.captures(&onebox) {
         dongle_id = caps[1].to_string();
         if let Some(ts) = caps.get(3) {
-            timestamp = Some(ts.as_str().to_string());
-            canonical_route_name = Some(format!("{}|{}", dongle_id, timestamp.as_ref().unwrap()));
+            canonical_route_name = Some(format!("{}|{}", dongle_id, ts.as_str()));
         }
     } else {
         dongle_id = "".to_string();
@@ -329,7 +337,7 @@ pub async fn qlog_render(
             }
             Ok(event_type) => {
                 // Get the string representation of the event type
-                let type_name = crate::common::types::get_event_name(&event_type);
+                let type_name = get_event_name(&event_type);
                 event_types.insert(type_name.clone());
                 // If an event is requested, only output that event's data
                 if let Some(ref requested_event) = params.event {

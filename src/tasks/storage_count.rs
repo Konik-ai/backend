@@ -2,7 +2,6 @@ use loco_rs::prelude::*;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::{from_str, Value};
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::io::{self, Write};
 

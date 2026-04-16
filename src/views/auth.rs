@@ -11,7 +11,7 @@ pub struct LoginResponse {
 }
 
 #[derive(Serialize)]
-pub(crate) struct LoginTemplate {
+pub struct LoginTemplate {
     pub api_host: String,
 }
 

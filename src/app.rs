@@ -224,6 +224,7 @@ impl Hooks for App {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct MyServerConfig {
     http: u16,
     https: u16,

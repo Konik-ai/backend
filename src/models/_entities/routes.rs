@@ -116,8 +116,8 @@ impl Default for Model {
             start_time_utc_millis: 0,
             user_id: String::default(),
             vin: String::default(),
-            created_at: DateTime::from_timestamp(0, 0),
-            updated_at: DateTime::from_timestamp(0, 0),
+            created_at: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
+            updated_at: chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
         }
     }
 }

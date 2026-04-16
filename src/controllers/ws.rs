@@ -492,10 +492,9 @@ async fn handle_socket(
                                 forward_command_to_device(&endpoint_dongle_id, &manager, &message)
                                     .await;
                         }
-                        _ => {
-                            tracing::error!("Invalid JSON-RPC message: {}", text);
-                        }
                     }
+                } else {
+                    tracing::error!("Invalid JSON-RPC message: {}", text);
                 }
             }
             Message::Binary(_bin) => {

@@ -4,7 +4,6 @@ use regex::Regex;
 use reqwest::Client;
 use serde_json::from_str;
 use serde_json::Value;
-use std::collections::BTreeMap;
 use std::env;
 use std::path::Path;
 use sysinfo::Disks;

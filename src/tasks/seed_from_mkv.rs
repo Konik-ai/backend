@@ -1,8 +1,6 @@
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
-use std::env::vars;
-use time::serde::timestamp;
+use rand::SeedableRng;
 // For the `shuffle` method
 use crate::common::re::*;
 use crate::{
@@ -31,6 +29,7 @@ impl Task for SeedFromMkv {
         }
     }
 
+    #[allow(unreachable_code)]
     async fn run(&self, app_context: &AppContext, vars: &task::Vars) -> Result<()> {
         println!("Task SeedFromMkv generated");
         let dongle_id_filter = vars.cli_arg("dongle_id").ok();
