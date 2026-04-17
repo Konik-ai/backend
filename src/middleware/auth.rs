@@ -151,9 +151,10 @@ where
                     handle_unauth(parts, &format!("Got invalid token: {}", e.to_string()))
                 })?;
 
-                let user_model = UM::find_by_identity(&ctx.db, identity).await;
-                let device_model = DM::find_device(&ctx.db, identity).await;
-
+                let (user_model, device_model) = tokio::join!(
+                    UM::find_by_identity(&ctx.db, identity),
+                    DM::find_device(&ctx.db, identity)
+                );
                 if user_model.is_err() && device_model.is_err() {
                     return Err(handle_unauth(parts, &error_message));
                 } else if user_model.is_ok() && device_model.is_ok() {
