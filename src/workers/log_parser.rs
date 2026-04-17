@@ -193,24 +193,26 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
                 };
                 match default_route_model.add_route_self(&self.ctx.db).await {
                     Ok(route) => route,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to add the default route: {} with Error: {}",
-                            &canonical_route_name,
-                            e.to_string()
+                    Err(ModelError::EntityAlreadyExists) => {
+                        tracing::debug!(
+                            "Route {} added by another process, fetching",
+                            &canonical_route_name
                         );
                         match routes::Model::find_route(&self.ctx.db, &canonical_route_name).await {
-                            Ok(route) => {
-                                tracing::error!("But it was added in a separate thread!");
-                                route
-                            }
-                            Err(_) => {
-                                return Err(sidekiq::Error::Message(
-                                    "Failed to add the default route: ".to_string()
-                                        + &e.to_string(),
-                                ))
+                            Ok(route) => route,
+                            Err(e) => {
+                                return Err(sidekiq::Error::Message(format!(
+                                    "Route {} reported as existing but find_route failed: {}",
+                                    &canonical_route_name, e
+                                )))
                             }
                         }
+                    }
+                    Err(e) => {
+                        return Err(sidekiq::Error::Message(format!(
+                            "Failed to add route {}: {}",
+                            &canonical_route_name, e
+                        )))
                     }
                 }
             }
@@ -247,24 +249,26 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
                 };
                 match default_segment_model.add_segment_self(&self.ctx.db).await {
                     Ok(segment) => segment, // The segment was added and here is the row.
-                    Err(e) => {
+                    Err(ModelError::EntityAlreadyExists) => {
                         tracing::trace!(
-                            "Failed to add the default segment {}: {}",
-                            &canonical_name,
-                            e
+                            "Segment {} added by another process, fetching",
+                            &canonical_name
                         );
                         match segments::Model::find_one(&self.ctx.db, &canonical_name).await {
-                            Ok(segment) => {
-                                tracing::trace!("But it was added in a separate thread!");
-                                segment
-                            }
-                            Err(_) => {
-                                return Err(sidekiq::Error::Message(
-                                    "Failed to add the default segment: ".to_string()
-                                        + &e.to_string(),
-                                ))
+                            Ok(segment) => segment,
+                            Err(e) => {
+                                return Err(sidekiq::Error::Message(format!(
+                                    "Segment {} reported as existing but find_one failed: {}",
+                                    &canonical_name, e
+                                )))
                             }
                         }
+                    }
+                    Err(e) => {
+                        return Err(sidekiq::Error::Message(format!(
+                            "Failed to add segment {}: {}",
+                            &canonical_name, e
+                        )))
                     }
                 }
             }

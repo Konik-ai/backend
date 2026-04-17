@@ -1,7 +1,7 @@
 pub use super::_entities::segments::{self, ActiveModel, Column, Entity, Model as SM};
 use chrono::prelude::Utc;
 use loco_rs::prelude::*;
-use sea_orm::{entity::prelude::*, DeleteResult, QueryOrder, TransactionTrait};
+use sea_orm::{entity::prelude::*, DeleteResult, QueryOrder, SqlErr};
 use serde::Serialize;
 
 #[async_trait::async_trait]
@@ -49,20 +49,14 @@ pub struct SegmentParams {
 
 impl SM {
     pub async fn add_segment_self(self, db: &DatabaseConnection) -> ModelResult<Self> {
-        let txn = db.begin().await?;
-        if Entity::find()
-            .filter(Column::CanonicalName.eq(&self.canonical_name))
-            .one(&txn)
-            .await?
-            .is_some()
-        {
-            return Err(ModelError::EntityAlreadyExists {});
-        }
-
         let active_model = self.clone().into_active_model();
-        active_model.insert(&txn).await?;
-        txn.commit().await?;
-        Ok(self)
+        match active_model.insert(db).await {
+            Ok(_) => Ok(self),
+            Err(e) => match e.sql_err() {
+                Some(SqlErr::UniqueConstraintViolation(_)) => Err(ModelError::EntityAlreadyExists),
+                _ => Err(e.into()),
+            },
+        }
     }
 
     pub async fn find_one(db: &DatabaseConnection, canonical_name: &String) -> ModelResult<SM> {

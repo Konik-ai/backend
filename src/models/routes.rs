@@ -13,8 +13,8 @@ use sea_orm::{
     QueryOrder,
     QuerySelect,
     QueryTrait,
+    SqlErr,
     Statement,
-    TransactionTrait,
 };
 
 use sea_orm::sea_query::{Expr, ExprTrait};
@@ -52,19 +52,14 @@ impl RM {
     ///
     /// Returns a `ModelResult` containing the added route on success, or an error on failure.
     pub async fn add_route_self(self, db: &DatabaseConnection) -> ModelResult<Self> {
-        let txn = db.begin().await?;
-        if Entity::find()
-            .filter(Column::Fullname.eq(&self.fullname))
-            .one(&txn)
-            .await?
-            .is_some()
-        {
-            return Err(ModelError::EntityAlreadyExists {});
-        }
         let active_model = self.clone().into_active_model();
-        active_model.insert(&txn).await?;
-        txn.commit().await?;
-        Ok(self)
+        match active_model.insert(db).await {
+            Ok(_) => Ok(self),
+            Err(e) => match e.sql_err() {
+                Some(SqlErr::UniqueConstraintViolation(_)) => Err(ModelError::EntityAlreadyExists),
+                _ => Err(e.into()),
+            },
+        }
     }
     /// Aggregate route miles per day (UTC) for all time.
     /// Groups by start_time_utc_millis floored to day and sums length.
