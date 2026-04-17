@@ -6,6 +6,7 @@ use std::path::Path;
 
 fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed=openpilot/cereal");
+    println!("cargo:rerun-if-changed=src/build.rs");
     let src_prefix = "openpilot/cereal";
     let capnp_files = ["log.capnp", "car.capnp", "custom.capnp", "legacy.capnp"];
     let out_dir = Path::new("src/cereal");
@@ -91,9 +92,9 @@ fn main() -> io::Result<()> {
                         } else {
                             enum_variant.clone()
                         };
-                        // Output: LogEvent::Which::Variant(_) => "fieldName".to_string(),
+                        // Output: LogEvent::Which::Variant(_) => "fieldName",
                         match_arms.push(format!(
-                            "        LogEvent::Which::{}(_) => \"{}\".to_string(),",
+                            "        LogEvent::Which::{}(_) => \"{}\",",
                             variant, field_name
                         ));
                     }
@@ -110,7 +111,7 @@ fn main() -> io::Result<()> {
     writeln!(gen_file, "use crate::cereal::log_capnp::event as LogEvent;")?;
     writeln!(
         gen_file,
-        "pub fn generated_event_type_name(event_type: &LogEvent::WhichReader) -> String {{"
+        "pub fn generated_event_type_name(event_type: &LogEvent::WhichReader) -> &'static str {{"
     )?;
     writeln!(gen_file, "    match event_type {{")?;
     for arm in match_arms {

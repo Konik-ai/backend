@@ -12,7 +12,7 @@ use tokio_util::io::StreamReader;
 extern crate url;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect};
-use std::{collections::HashMap, env, io::Cursor};
+use std::{collections::HashMap, env, sync::LazyLock};
 
 use crate::{
     common::{mkv_helpers, re::*},
@@ -82,9 +82,14 @@ include!(concat!(
     "/src/cereal/generated_event_type_names.rs"
 ));
 
-pub fn get_event_name(event_type: &LogEvent::WhichReader) -> String {
+pub fn get_event_name(event_type: &LogEvent::WhichReader) -> &'static str {
     generated_event_type_name(event_type)
 }
+
+static SEGMENT_FILE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    let pattern = format!(r"(({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$))");
+    regex::Regex::new(&pattern).expect("segment file regex should compile")
+});
 
 
 pub async fn onebox_handler(
@@ -244,10 +249,7 @@ pub async fn qlog_render(
     Query(params): Query<UlogQuery>,
 ) -> Result<impl IntoResponse> {
     // Validate the URL
-    let segment_file_regex_string =
-        format!(r"(({DONGLE_ID})_({ROUTE_NAME})--({NUMBER})--({ALLOWED_FILENAME}$))");
-    let segment_file_regex = regex::Regex::new(&segment_file_regex_string).unwrap();
-    let response = if let Some(captures) = segment_file_regex.captures(&params.url) {
+    let response = if let Some(captures) = SEGMENT_FILE_REGEX.captures(&params.url) {
         let dongle_id = captures[2].to_string();
         if let Some(user_model) = auth.user_model {
             let device_model = DM::find_device(&ctx.db, &dongle_id).await?;
@@ -309,51 +311,47 @@ pub async fn qlog_render(
         };
 
     let mut decompressed_data = Vec::new();
-    match tokio::io::AsyncReadExt::read_to_end(&mut decoder, &mut decompressed_data).await {
-        Ok(_) => (),
-        Err(e) => return Err(Error::Message(e.to_string())),
-    };
+    tokio::io::AsyncReadExt::read_to_end(&mut decoder, &mut decompressed_data)
+        .await
+        .map_err(|e| Error::Message(e.to_string()))?;
 
-    let mut cursor = Cursor::new(decompressed_data);
-    let mut unlog_data = Vec::new();
+    let mut reader = std::io::Cursor::new(decompressed_data);
     let reader_options = capnp::message::ReaderOptions::default();
 
-    // Create a set to store event names
-    let mut event_types = std::collections::HashSet::new();
+    let mut event_types: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::new();
+    let mut unlog_data = Vec::new();
+    let mut root_failures: usize = 0;
 
     use std::io::Write;
-    while let Ok(message_reader) = capnp::serialize::read_message(&mut cursor, reader_options) {
+    while let Ok(message_reader) = capnp::serialize::read_message(&mut reader, reader_options) {
         let event = match message_reader.get_root::<LogEvent::Reader>() {
             Ok(event) => event,
-            Err(e) => {
-                tracing::warn!("Failed to get root: {:?}", e);
+            Err(_) => {
+                root_failures += 1;
                 continue;
             }
         };
 
-        match event.which() {
-            Err(_) => {
-                continue;
-            }
-            Ok(event_type) => {
-                // Get the string representation of the event type
-                let type_name = get_event_name(&event_type);
-                event_types.insert(type_name.clone());
-                // If an event is requested, only output that event's data
-                if let Some(ref requested_event) = params.event {
-                    if type_name == *requested_event {
-                        writeln!(&mut unlog_data, "{:#?}", event).unwrap_or(());
-                    }
-                }
+        let Ok(event_type) = event.which() else {
+            continue;
+        };
+
+        let type_name = get_event_name(&event_type);
+        event_types.insert(type_name);
+        if let Some(ref requested_event) = params.event {
+            if type_name == requested_event.as_str() {
+                writeln!(&mut unlog_data, "{:#?}", event).ok();
             }
         }
     }
 
-    // Always return the list of events
-    let mut event_list: Vec<String> = event_types.into_iter().collect();
-    event_list.sort();
+    if root_failures > 0 {
+        tracing::debug!("Skipped {} unreadable capnp messages", root_failures);
+    }
 
-    let data = if let Some(_) = params.event {
+    let event_list: Vec<String> = event_types.iter().map(|s| (*s).to_string()).collect();
+
+    let data = if params.event.is_some() {
         String::from_utf8(unlog_data)
             .unwrap_or_else(|_| "Failed to convert log data to string".to_string())
     } else if !event_list.is_empty() {
