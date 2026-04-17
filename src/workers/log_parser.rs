@@ -2,22 +2,20 @@ use async_compression::tokio::bufread;
 use capnp::message::ReaderOptions;
 use ffmpeg_next::format as ffmpeg_format;
 use futures::stream::TryStreamExt;
-use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageBuffer, Rgba};
 use loco_rs::prelude::*;
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     env,
-    io::{Cursor, Write},
-    sync::Arc,
+    io::{self, Cursor, Write},
+    sync::{Arc, OnceLock},
     time::Instant,
 };
 use tempfile::NamedTempFile;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt},
     sync::{Mutex, Notify},
 };
 use tokio_util::io::StreamReader;
@@ -119,6 +117,23 @@ impl LockManager {
     }
 }
 
+async fn device_exists(
+    db: &DatabaseConnection,
+    dongle_id: &str,
+) -> bool {
+    match devices::Model::find_device(db, dongle_id).await {
+        Ok(_) => true,
+        Err(ModelError::EntityNotFound) => {
+            tracing::info!("Unregistered device {}", dongle_id);
+            false
+        }
+        Err(e) => {
+            tracing::error!("Device lookup failed {}: {}", dongle_id, e);
+            false
+        }
+    }
+}
+
 impl worker::AppWorker<LogSegmentWorkerArgs> for LogSegmentWorker {
     fn build(ctx: &AppContext) -> Self {
         static LOCK_MANAGER: Lazy<Arc<LockManager>> = Lazy::new(|| Arc::new(LockManager::new()));
@@ -151,18 +166,10 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
         let client = self.client.clone();
         let api_endpoint: String =
             env::var("API_ENDPOINT").expect("API_ENDPOINT env variable not set");
-        // check if the device is in the database
-        let _device_model = match devices::Model::find_device(&self.ctx.db, &args.dongle_id).await {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::info!(
-                    "Recieved file from an unregistered device. {} or DB Error: {}",
-                    args.dongle_id,
-                    e
-                );
-                return Ok(());
-            }
-        };
+
+        if !device_exists(&self.ctx.db, &args.dongle_id).await { 
+            return Ok(()); 
+        }
 
         let canonical_route_name = format!("{}|{}", args.dongle_id, args.timestamp);
         let key = super::log_helpers::calculate_advisory_lock_key(&canonical_route_name);
@@ -636,7 +643,6 @@ async fn parse_qlog(
         args.dongle_id, args.timestamp, args.segment, args.file
     ));
 
-    let mut unlog_data = Vec::new();
     let mut cursor = Cursor::new(decompressed_data);
     let mut onroad_mono_time: Option<u64> = None;
     let mut gps_seen = false;
@@ -723,7 +729,6 @@ async fn parse_qlog(
                                 seg.end_time_utc_millis = ActiveValue::Set(gps_ts);
                             }
                         }
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::DeviceState(device_state) => {
                         if let Ok(device_state) = device_state {
@@ -731,7 +736,6 @@ async fn parse_qlog(
                                 onroad_mono_time = Some(device_state.get_started_mono_time());
                             }
                         }
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::Thumbnail(thumbnail) => {
                         // take the jpg and add it to the array of the other jpgs.
@@ -748,7 +752,6 @@ async fn parse_qlog(
                             .ok()
                             .and_then(|params| params.get_car_fingerprint().ok())
                             .map_or_else(String::new, |fp| fp.to_string().unwrap_or_default());
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::InitData(init_data) => {
                         if let Ok(init_data) = init_data {
@@ -782,10 +785,8 @@ async fn parse_qlog(
                             }
                         }
 
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::OnroadEvents(_onroad_event) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::SelfdriveState(selfdrive_state) => {
                         if let Ok(selfdrive_state) = selfdrive_state {
@@ -855,42 +856,20 @@ async fn parse_qlog(
                                 }
                             }
                         }
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
                     LogEvent::Can(_) => {
                         seg.can = ActiveValue::Set(true);
-                        writeln!(unlog_data, "{:#?}", event).ok();
                     }
-                    LogEvent::PandaStates(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::Sendcan(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::ErrorLogMessage(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::LogMessage(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::LiveParameters(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::LiveTorqueParameters(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::ManagerState(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::NavInstruction(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::UploaderState(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
-                    LogEvent::QcomGnss(_) => {
-                        writeln!(unlog_data, "{:#?}", event).ok();
-                    }
+                    LogEvent::PandaStates(_) => {}
+                    LogEvent::Sendcan(_) => {}
+                    LogEvent::ErrorLogMessage(_) => {}
+                    LogEvent::LogMessage(_) => {}
+                    LogEvent::LiveParameters(_) => {}
+                    LogEvent::LiveTorqueParameters(_) => {}
+                    LogEvent::ManagerState(_) => {}
+                    LogEvent::NavInstruction(_) => {}
+                    LogEvent::UploaderState(_) => {}
+                    LogEvent::QcomGnss(_) => {}
                     _ => continue, //writeln!(writer, "{:#?}", event).map_err(Box::from)?, // unlog everything?
                 }
             }
@@ -913,80 +892,66 @@ async fn parse_qlog(
         args.dongle_id, args.timestamp, args.segment
     ));
 
-    upload_data(
-        client,
-        &coords_url,
-        serde_json::to_vec(&coordinates).unwrap_or_default(),
-    )
-    .await;
-    upload_data(
-        client,
-        &events_url,
-        serde_json::to_vec(&events).unwrap_or_default(),
-    )
-    .await;
-    upload_data(
-        &client,
-        &args
-            .internal_file_url
-            .replace(".bz2", ".unlog")
-            .replace(".zst", ".unlog"),
-        unlog_data,
-    )
-    .await;
+    let img_bytes = if thumbnails.is_empty() {
+        None
+    } else {
+        Some(
+            tokio::task::spawn_blocking(move || {
+                use image::{GenericImage, ImageBuffer, Rgba};
+                use image::codecs::jpeg::JpegEncoder;
+                use image::imageops::FilterType;
 
-    let img_proc_start = Instant::now();
-    if !thumbnails.is_empty() {
-        // Downscale each thumbnail in parallel
-        let downscaled_thumbnails: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = thumbnails
-            .par_iter()
-            .map(|image_data| {
-                let img = image::load_from_memory(image_data).expect("Failed to load image");
-                img.resize_exact(1536 / 12, 80, image::imageops::FilterType::Lanczos3)
-                    .to_rgba8()
-            })
-            .collect();
+                const TILE_WIDTH: u32 = 128;
+                const TILE_HEIGHT: u32 = 80;
 
-        // Combine the downscaled images sequentially
-        let combined_width = (1536 / 12) * downscaled_thumbnails.len() as u32;
-        let mut combined_img = ImageBuffer::new(combined_width, 80);
+                let downscaled: Vec<ImageBuffer<Rgba<u8>, Vec<u8>>> = thumbnails
+                    .iter()
+                    .map(|image_data| {
+                        let img = image::load_from_memory(image_data)
+                            .expect("Failed to load image");
+                        img.resize_exact(TILE_WIDTH, TILE_HEIGHT, FilterType::Lanczos3)
+                            .to_rgba8()
+                    })
+                    .collect();
 
-        for (i, thumbnail) in downscaled_thumbnails.iter().enumerate() {
-            let offset = i as u32 * (1536 / 12);
-            for y in 0..80 {
-                for x in 0..(1536 / 12) {
-                    let pixel = thumbnail.get_pixel(x, y);
-                    combined_img.put_pixel(x + offset, y, *pixel);
+                let combined_width = TILE_WIDTH * downscaled.len() as u32;
+                let mut stitched = ImageBuffer::new(combined_width, TILE_HEIGHT);
+
+                for (i, thumbnail) in downscaled.iter().enumerate() {
+                    let x = i as u32 * TILE_WIDTH;
+                    stitched.copy_from(thumbnail, x, 0).expect("copy_from failed");
                 }
-            }
+
+                let mut bytes = Vec::new();
+                let mut encoder = JpegEncoder::new_with_quality(&mut bytes, 80);
+                encoder.encode_image(&stitched).expect("jpeg encode failed");
+                bytes
+            })
+            .await
+            .unwrap(),
+        )
+    };
+    let sprite_url = common::mkv_helpers::get_mkv_file_url(&format!(
+        "{}_{}--{}--sprite.jpg",
+        args.dongle_id, args.timestamp, args.segment
+    ));
+
+    let sprite_upload = async move {
+        if let Some(img_bytes) = img_bytes {
+            upload_data(client, &sprite_url, img_bytes).await;
         }
+    };
 
-        // Create the final image with a height of 80px
-        let mut final_img = ImageBuffer::new(combined_width, 80);
-        image::imageops::overlay(
-            &mut final_img,
-            &DynamicImage::ImageRgba8(combined_img),
-            0,
-            0,
-        );
+    let coords_bytes = serde_json::to_vec(&coordinates)
+        .map_err(|e| sidekiq::Error::Message(format!("coords serialize failed: {}", e)))?;
+    let events_bytes = serde_json::to_vec(&events)
+        .map_err(|e| sidekiq::Error::Message(format!("events serialize failed: {}", e)))?;
 
-        // Convert the final image to a byte vector
-        let img_bytes = {
-            let mut img_bytes: Vec<u8> = Vec::new();
-            let mut encoder = JpegEncoder::new_with_quality(&mut img_bytes, 80);
-            encoder
-                .encode_image(&DynamicImage::ImageRgba8(final_img))
-                .ok();
-            img_bytes
-        };
-
-        let sprite_url = common::mkv_helpers::get_mkv_file_url(&format!(
-            "{}_{}--{}--sprite.jpg",
-            args.dongle_id, args.timestamp, args.segment
-        ));
-        tracing::trace!("Image proc took: {:?}", img_proc_start.elapsed());
-        upload_data(client, &sprite_url, img_bytes).await;
-    }
+    tokio::join!(
+        upload_data(client, &coords_url, coords_bytes),
+        upload_data(client, &events_url, events_bytes),
+        sprite_upload
+    );
 
     qlog_result.total_time = coordinates
         .last()
@@ -1008,36 +973,52 @@ async fn upload_data(client: &Client, url: &str, body: Vec<u8>) {
             }
         }
         Err(e) => {
-            tracing::error!("Request to {} failed: {}", url, e);
+            tracing::error!(
+                url = %url,
+                error = %e,
+                debug = ?e,
+                is_connect = e.is_connect(),
+                is_timeout = e.is_timeout(),
+                is_request = e.is_request(),
+                is_body = e.is_body(),
+                "Request failed"
+            );
         }
     }
 }
 
-async fn get_qcam_duration(response: Response) -> Result<f32, std::io::Error> {
-    let response = response
-        .error_for_status()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+static FFMPEG_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
-    let temp_file = NamedTempFile::new()?;
-    let mut temp_file_async = tokio::fs::File::from_std(temp_file.reopen()?);
+async fn get_qcam_duration(response: Response) -> Result<f32, io::Error> {
+    let response = response.error_for_status().map_err(io::Error::other)?;
+
+    // Fast path for throughput: buffer the whole body in memory first,
+    // then do a single blocking handoff for file write + ffmpeg probe.
+    let mut body = Vec::new();
     let mut stream = response.bytes_stream();
 
-    while let Some(chunk) = stream
-        .try_next()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "qcam stream error");
-            std::io::Error::new(std::io::ErrorKind::Other, e)
-        })?
-    {
-        temp_file_async.write_all(&chunk).await?;
+    while let Some(chunk) = stream.try_next().await.map_err(|e| {
+        tracing::error!(error = %e, "qcam stream error");
+        io::Error::other(e)
+    })? {
+        body.extend_from_slice(&chunk);
     }
 
-    temp_file_async.sync_all().await?;
+    tokio::task::spawn_blocking(move || -> Result<f32, io::Error> {
+        FFMPEG_INIT
+            .get_or_init(|| ffmpeg_next::init().map_err(|e| e.to_string()))
+            .as_ref()
+            .map_err(|e| io::Error::other(format!("ffmpeg init failed: {e}")))?;
 
-    ffmpeg_next::init()?;
-    let context = ffmpeg_format::input(&temp_file.path())?;
-    Ok(context.duration() as f32 / 1_000_000.0)
+        let mut temp_file = NamedTempFile::new()?;
+        temp_file.write_all(&body)?;
+        temp_file.flush()?;
+
+        let context = ffmpeg_format::input(temp_file.path()).map_err(io::Error::other)?;
+        Ok(context.duration() as f32 / 1_000_000.0)
+    })
+    .await
+    .map_err(io::Error::other)?
 }
 
 fn handle_device_params<'a>(
