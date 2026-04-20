@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     libavformat-dev \
     libavcodec-dev \
     libavdevice-dev \
+    ffmpeg \
     capnproto \
     nodejs \
     python3 \

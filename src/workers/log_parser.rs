@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     env,
     io::{self, Cursor, Write},
-    sync::{Arc, OnceLock},
+    sync::{Arc},
     time::Instant,
 };
 use tempfile::NamedTempFile;
@@ -24,6 +24,7 @@ use crate::cereal::log_capnp::event as LogEvent;
 use crate::cereal::log_capnp;
 use crate::common;
 use crate::models::_entities::{devices, routes, segments};
+use crate::common::ffmpeg::ensure_ffmpeg_init;
 
 pub struct LogSegmentWorker {
     pub ctx: AppContext,
@@ -931,6 +932,7 @@ async fn parse_qlog(
             .unwrap(),
         )
     };
+
     let sprite_url = common::mkv_helpers::get_mkv_file_url(&format!(
         "{}_{}--{}--sprite.jpg",
         args.dongle_id, args.timestamp, args.segment
@@ -987,8 +989,6 @@ async fn upload_data(client: &Client, url: &str, body: Vec<u8>) {
     }
 }
 
-static FFMPEG_INIT: OnceLock<Result<(), String>> = OnceLock::new();
-
 async fn get_qcam_duration(response: Response) -> Result<f32, io::Error> {
     let response = response.error_for_status().map_err(io::Error::other)?;
 
@@ -1005,10 +1005,7 @@ async fn get_qcam_duration(response: Response) -> Result<f32, io::Error> {
     }
 
     tokio::task::spawn_blocking(move || -> Result<f32, io::Error> {
-        FFMPEG_INIT
-            .get_or_init(|| ffmpeg_next::init().map_err(|e| e.to_string()))
-            .as_ref()
-            .map_err(|e| io::Error::other(format!("ffmpeg init failed: {e}")))?;
+        ensure_ffmpeg_init().map_err(|e| io::Error::other(format!("ffmpeg init failed: {e}")))?;
 
         let mut temp_file = NamedTempFile::new()?;
         temp_file.write_all(&body)?;

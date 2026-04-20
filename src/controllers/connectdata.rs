@@ -1,22 +1,28 @@
 #![allow(clippy::unused_async)]
 use std::{collections::HashMap, sync::Arc};
-
+use std::io::Write;
 use crate::{
-    common::{mkv_helpers, re::*},
+    common::{mkv_helpers, re::*, ffmpeg::*},
     enforce_ownership_rule,
     models::{devices::DM, routes::RM},
 };
 use axum::{
-    extract::{Path, Query, State},
+    body::Body,
+    extract::{Path, Query, State, Extension},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Extension,
 };
 use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::Value as JsonValue;
+
+use tempfile::NamedTempFile;
+use std::{
+    path::PathBuf
+};
+use futures_util::StreamExt;
 
 use super::ws::ConnectionManager;
 use chrono::{Datelike, TimeZone, Timelike, Utc};
@@ -807,6 +813,162 @@ pub async fn get_all_cloudlogs(
     ))
 }
 
+pub async fn download_stitched_video(
+    auth: crate::middleware::auth::MyJWT,
+    Path((dongle_id, route_name, file_type)): Path<(String, String, String)>,
+    State(ctx): State<AppContext>,
+    Extension(client): Extension<reqwest::Client>,
+) -> Result<Response<Body>, (StatusCode, &'static str)> {
+    let (hevc_file, input_fps) = match file_type.as_str() {
+        "fcamera" => ("fcamera.hevc", 20),
+        "dcamera" => ("dcamera.hevc", 20),
+        "ecamera" => ("ecamera.hevc", 20),
+        _ => return Err((StatusCode::BAD_REQUEST, "Invalid file type")),
+    };
+
+    let fullname = format!("{dongle_id}|{route_name}");
+    let owner = is_owner(&auth, &ctx.db, &dongle_id).await;
+    let superuser = auth.user_model.as_ref().map(|u| u.superuser).unwrap_or(false);
+    let public = RM::is_public(&ctx.db, &fullname).await.unwrap_or(false);
+    if !public && !owner && !superuser {
+        return Err((StatusCode::UNAUTHORIZED, "Not authorized"));
+    }
+
+    let list_url = mkv_helpers::list_keys_starting_with(&format!("{dongle_id}_{route_name}"));
+    let resp = client
+        .get(&list_url)
+        .send()
+        .await
+        .map_err(|_| (StatusCode::BAD_GATEWAY, "Failed to list segments"))?;
+    if !resp.status().is_success() {
+        return Err((StatusCode::BAD_GATEWAY, "Failed to list segments"));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|_| (StatusCode::BAD_GATEWAY, "Invalid list response"))?;
+    let keys = json["keys"]
+        .as_array()
+        .ok_or((StatusCode::BAD_GATEWAY, "Invalid list response"))?;
+
+    let mut segments: Vec<(u32, String)> = keys
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|s| s.trim_start_matches('/').to_string())
+        .filter(|s| s.ends_with(hevc_file))
+        .filter_map(|s| {
+            let mut parts = s.rsplitn(3, "--");
+            let filename = parts.next()?;
+            let seg_str = parts.next()?;
+            let _prefix = parts.next()?;
+
+            if filename != hevc_file {
+                return None;
+            }
+
+            let seg_num = seg_str.parse::<u32>().ok()?;
+            Some((seg_num, s))
+        })
+        .collect();
+
+    segments.sort_by_key(|(n, _)| *n);
+
+    if segments.is_empty() {
+        return Err((StatusCode::NOT_FOUND, "No segments found"));
+    }
+
+    // 1) Download all segment bytes into one temp .hevc file
+    let mut input_temp = NamedTempFile::with_suffix(".hevc")
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create temp input"))?;
+
+    for (_, key) in &segments {
+        let url = mkv_helpers::get_mkv_file_url(key);
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|_| (StatusCode::BAD_GATEWAY, "Failed to fetch segment"))?;
+
+        if !resp.status().is_success() {
+            return Err((StatusCode::BAD_GATEWAY, "Failed to fetch segment"));
+        }
+
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk.map_err(|_| (StatusCode::BAD_GATEWAY, "Failed reading segment"))?;
+            input_temp
+                .write_all(&bytes)
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed writing temp input"))?;
+        }
+    }
+
+    input_temp
+        .flush()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed flushing temp input"))?;
+
+    let input_path: PathBuf = input_temp
+        .into_temp_path()
+        .keep()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to persist temp input"))?;
+
+    // Create output temp path in two steps because keep() has a different error type.
+    let output_temp = NamedTempFile::with_suffix(".mp4")
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create temp output"))?;
+
+    let output_path: PathBuf = output_temp
+        .into_temp_path()
+        .keep()
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to persist temp output"))?;
+
+    // 2) Convert with ffmpeg CLI in a blocking thread
+    let input_path_for_task = input_path.clone();
+    let output_path_for_task = output_path.clone();
+
+    tokio::task::spawn_blocking(move || {
+        remux_hevc_to_mp4(&input_path_for_task, &output_path_for_task, input_fps)
+    })
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Video remux task failed"))?
+    .map_err(|e| {
+        tracing::error!(error = %e, "hevc->mp4 remux failed");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to remux video")
+    })?;
+
+    // 3) Stream the finished MP4 back
+    let file = tokio::fs::File::open(&output_path)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to open output video"))?;
+    let file_size = file
+        .metadata()
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to stat output video"))?
+        .len();
+
+    let stream = tokio_util::io::ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    // cleanup temp files after response has had a chance to start streaming
+    tokio::spawn(async move {
+        // best effort; small delay helps avoid racing on some platforms
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        let _ = tokio::fs::remove_file(input_path).await;
+        let _ = tokio::fs::remove_file(output_path).await;
+    });
+
+    let filename = format!("{dongle_id}_{route_name}_{file_type}.mp4");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(hyper::header::CONTENT_TYPE, "video/mp4")
+        .header(hyper::header::CONTENT_LENGTH, file_size.to_string())
+        .header(
+            hyper::header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(body)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response"))
+}
+
 // List top-level keys (sorted, paginated) with auth and pattern check
 pub async fn api_useradmin_log_keys(
     auth: crate::middleware::auth::MyJWT,
@@ -885,6 +1047,10 @@ pub fn routes() -> Routes {
         )
         .add("/delete/:dongle_id", delete(delete_data))
         .add("/delete/:dongle_id/:timestamp", delete(delete_route))
+        .add(
+            "/download/:dongle_id/:timestamp/:file_type",
+            get(download_stitched_video),
+        )
         .add("/bootlog/:bootlog_file", get(bootlog_file_download))
         .add("/:dongle_id/cloudlogs", get(get_cloudlog_cache))
         .add("/cloudlogs/all", get(get_all_cloudlogs))
