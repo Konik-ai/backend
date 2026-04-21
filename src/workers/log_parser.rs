@@ -1,6 +1,5 @@
 use async_compression::tokio::bufread;
 use capnp::message::ReaderOptions;
-use ffmpeg_next::format as ffmpeg_format;
 use futures::stream::TryStreamExt;
 use loco_rs::prelude::*;
 use once_cell::sync::Lazy;
@@ -9,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     env,
-    io::{self, Cursor, Write},
+    io::{self, Cursor},
     sync::{Arc},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tempfile::NamedTempFile;
 use tokio::{
@@ -23,8 +22,8 @@ use tokio_util::io::StreamReader;
 use crate::cereal::log_capnp::event as LogEvent;
 use crate::cereal::log_capnp;
 use crate::common;
+use crate::common::ffmpeg::probe_duration_seconds;
 use crate::models::_entities::{devices, routes, segments};
-use crate::common::ffmpeg::ensure_ffmpeg_init;
 
 pub struct LogSegmentWorker {
     pub ctx: AppContext,
@@ -52,6 +51,12 @@ struct QLogResult {
     end_time: i64,
     total_time: i64,
 }
+
+const MAX_QCAM_PROBE_BYTES: usize = 200 * 1024 * 1024;
+const QCAM_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const TS_PACKET_SIZE: usize = 188;
+const TS_SYNC_MIN_PACKETS: usize = 4;
+const EMPTY_QLOG_ERROR: &str = "qlog contained no readable messages";
 
 use async_trait::async_trait;
 use sea_orm::{DatabaseConnection, DbErr};
@@ -312,7 +317,7 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
             "qlog.bz2" | "qlog.zst" => {
                 qlog_result = match handle_qlog(&mut seg, response, &args, &self.ctx, &client).await
                 {
-                    Ok(qlog_result) => Some(qlog_result),
+                    Ok(qlog_result) => qlog_result,
                     Err(e) => {
                         tracing::error!("Failed to handle qlog: {}", &e.to_string());
                         return Err(sidekiq::Error::Message(
@@ -386,38 +391,54 @@ impl worker::Worker<LogSegmentWorkerArgs> for LogSegmentWorker {
                 return Err(sidekiq::Error::Message(e.to_string()));
             }
         };
-        let mut active_route_model = route_model.into_active_model();
-        if let Some(log) = qlog_result {
-            active_route_model.platform = ActiveValue::Set(log.car_fingerprint);
-            active_route_model.git_remote = ActiveValue::Set(if log.git_remote.is_empty() {
-                None
-            } else {
-                Some(log.git_remote)
-            });
-            active_route_model.git_commit = ActiveValue::Set(if log.git_commit.is_empty() {
-                None
-            } else {
-                Some(log.git_commit)
-            });
-            active_route_model.git_branch = ActiveValue::Set(if log.git_branch.is_empty() {
-                None
-            } else {
-                Some(log.git_branch)
-            });
-        }
-        //let mut active_device_model = device_model.into_active_model();
-        update_route_info(&self.ctx, &mut active_route_model, &segment_models).await?;
-        //update_device_info(&self.ctx, &mut active_device_model, &active_route_model, &ignore_uploads).await?;
-
-        match active_route_model.update(&self.ctx.db).await {
-            Ok(_) => (),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to update active route model. DB Error {}",
-                    e.to_string()
-                );
-                return Err(sidekiq::Error::Message(e.to_string()));
+        if route_has_any_uploads(&segment_models) {
+            let mut active_route_model = route_model.into_active_model();
+            if let Some(log) = qlog_result {
+                active_route_model.platform = ActiveValue::Set(log.car_fingerprint);
+                active_route_model.git_remote = ActiveValue::Set(if log.git_remote.is_empty() {
+                    None
+                } else {
+                    Some(log.git_remote)
+                });
+                active_route_model.git_commit = ActiveValue::Set(if log.git_commit.is_empty() {
+                    None
+                } else {
+                    Some(log.git_commit)
+                });
+                active_route_model.git_branch = ActiveValue::Set(if log.git_branch.is_empty() {
+                    None
+                } else {
+                    Some(log.git_branch)
+                });
             }
+            //let mut active_device_model = device_model.into_active_model();
+            update_route_info(&self.ctx, &mut active_route_model, &segment_models).await?;
+            //update_device_info(&self.ctx, &mut active_device_model, &active_route_model, &ignore_uploads).await?;
+
+            match active_route_model.update(&self.ctx.db).await {
+                Ok(_) => (),
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to update active route model. DB Error {}",
+                        e.to_string()
+                    );
+                    return Err(sidekiq::Error::Message(e.to_string()));
+                }
+            }
+        } else {
+            tracing::warn!(
+                route = %route_model.fullname,
+                file = %args.internal_file_url,
+                "Deleting route because all segment upload URLs are empty"
+            );
+            routes::Model::delete_route(&self.ctx.db, &route_model.fullname)
+                .await
+                .map_err(|e| {
+                    sidekiq::Error::Message(format!(
+                        "Failed to delete empty route {}: {}",
+                        route_model.fullname, e
+                    ))
+                })?;
         }
         self.lock_manager
             .release_advisory_lock(&self.ctx.db, key)
@@ -565,13 +586,26 @@ async fn update_route_info(
     return Ok(());
 }
 
+fn route_has_any_uploads(segment_models: &[segments::Model]) -> bool {
+    segment_models.iter().any(segment_has_any_upload)
+}
+
+fn segment_has_any_upload(segment: &segments::Model) -> bool {
+    !segment.qlog_url.is_empty()
+        || !segment.rlog_url.is_empty()
+        || !segment.qcam_url.is_empty()
+        || !segment.fcam_url.is_empty()
+        || !segment.dcam_url.is_empty()
+        || !segment.ecam_url.is_empty()
+}
+
 async fn handle_qlog(
     seg: &mut segments::ActiveModel,
     response: Response,
     args: &LogSegmentWorkerArgs,
     ctx: &AppContext,
     client: &Client,
-) -> worker::Result<QLogResult> {
+) -> worker::Result<Option<QLogResult>> {
     let bytes_stream = response
         .bytes_stream()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
@@ -587,12 +621,65 @@ async fn handle_qlog(
 
     let mut decompressed_data = Vec::new();
 
-    match decoder.read_to_end(&mut decompressed_data).await {
-        Ok(_) => (),
-        Err(e) => return Err(sidekiq::Error::Message(e.to_string())),
-    };
+    if let Err(e) = decoder.read_to_end(&mut decompressed_data).await {
+        if is_truncated_stream_error(&e) {
+            if decompressed_data.is_empty() {
+                tracing::warn!(
+                    route = %format!("{}|{}", args.dongle_id, args.timestamp),
+                    segment = %args.segment,
+                    error = %e,
+                    "Skipping truncated qlog with no decodable payload"
+                );
+                return Ok(None);
+            }
+            tracing::warn!(
+                route = %format!("{}|{}", args.dongle_id, args.timestamp),
+                segment = %args.segment,
+                decoded_bytes = decompressed_data.len(),
+                error = %e,
+                "qlog stream ended early; continuing with partial payload"
+            );
+        } else {
+            return Err(sidekiq::Error::Message(e.to_string()));
+        }
+    }
 
-    Ok(parse_qlog(&client, seg, decompressed_data, args, ctx).await?)
+    if decompressed_data.is_empty() {
+        tracing::warn!(
+            route = %format!("{}|{}", args.dongle_id, args.timestamp),
+            segment = %args.segment,
+            "Skipping qlog because decompressed payload is empty"
+        );
+        return Ok(None);
+    }
+
+    match parse_qlog(&client, seg, decompressed_data, args, ctx).await {
+        Ok(result) => Ok(Some(result)),
+        Err(e) => {
+            if e.to_string().contains(EMPTY_QLOG_ERROR) {
+                tracing::warn!(
+                    route = %format!("{}|{}", args.dongle_id, args.timestamp),
+                    segment = %args.segment,
+                    "Skipping qlog because payload had no readable capnp messages"
+                );
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+fn is_truncated_stream_error(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::UnexpectedEof {
+        return true;
+    }
+
+    let message = error.to_string().to_lowercase();
+    message.contains("stream did not finish")
+        || message.contains("premature end")
+        || message.contains("unexpected end of file")
+        || message.contains("unexpected eof")
 }
 
 impl Default for QLogResult {
@@ -660,6 +747,7 @@ async fn parse_qlog(
     // Track state to collapse consecutive identical events
     let mut last_state: Option<(bool, i32)> = None; // (enabled, alertStatus)
     let mut last_event_idx: Option<usize> = None; // Index of the last emitted event
+    let mut readable_messages = 0usize;
 
     while let Ok(message_reader) =
         capnp::serialize::read_message(&mut cursor, ReaderOptions::default())
@@ -671,6 +759,7 @@ async fn parse_qlog(
                 continue;
             } // Skip parsing if we can't get the root
         };
+        readable_messages += 1;
 
         match event.which() {
             Err(_e) => {
@@ -877,6 +966,10 @@ async fn parse_qlog(
         }
     }
 
+    if readable_messages == 0 {
+        return Err(sidekiq::Error::Message(EMPTY_QLOG_ERROR.to_string()));
+    }
+
     if let (Some(last_lat), Some(last_lng)) = (last_lat, last_lng) {
         seg.end_lat = ActiveValue::Set(last_lat);
         seg.end_lng = ActiveValue::Set(last_lng);
@@ -992,8 +1085,7 @@ async fn upload_data(client: &Client, url: &str, body: Vec<u8>) {
 async fn get_qcam_duration(response: Response) -> Result<f32, io::Error> {
     let response = response.error_for_status().map_err(io::Error::other)?;
 
-    // Fast path for throughput: buffer the whole body in memory first,
-    // then do a single blocking handoff for file write + ffmpeg probe.
+    // Buffer the payload first so we can enforce strict limits before probing media metadata.
     let mut body = Vec::new();
     let mut stream = response.bytes_stream();
 
@@ -1001,21 +1093,62 @@ async fn get_qcam_duration(response: Response) -> Result<f32, io::Error> {
         tracing::error!(error = %e, "qcam stream error");
         io::Error::other(e)
     })? {
+        if body.len().saturating_add(chunk.len()) > MAX_QCAM_PROBE_BYTES {
+            return Err(io::Error::other(format!(
+                "qcam payload exceeds probe limit ({} bytes)",
+                MAX_QCAM_PROBE_BYTES
+            )));
+        }
         body.extend_from_slice(&chunk);
     }
 
-    tokio::task::spawn_blocking(move || -> Result<f32, io::Error> {
-        ensure_ffmpeg_init().map_err(|e| io::Error::other(format!("ffmpeg init failed: {e}")))?;
+    if body.is_empty() {
+        return Err(io::Error::other("qcam payload is empty"));
+    }
 
-        let mut temp_file = NamedTempFile::new()?;
-        temp_file.write_all(&body)?;
-        temp_file.flush()?;
+    if !looks_like_mpeg_ts(&body) {
+        return Err(io::Error::other(
+            "qcam payload failed MPEG-TS signature validation",
+        ));
+    }
 
-        let context = ffmpeg_format::input(temp_file.path()).map_err(io::Error::other)?;
-        Ok(context.duration() as f32 / 1_000_000.0)
-    })
-    .await
-    .map_err(io::Error::other)?
+    let temp_file = NamedTempFile::new()?;
+    let temp_path = temp_file.path().to_path_buf();
+    tokio::task::spawn_blocking(move || std::fs::write(temp_path, body))
+        .await
+        .map_err(io::Error::other)?
+        .map_err(io::Error::other)?;
+
+    probe_duration_seconds(temp_file.path(), QCAM_PROBE_TIMEOUT).await
+}
+
+fn looks_like_mpeg_ts(data: &[u8]) -> bool {
+    if data.len() < TS_PACKET_SIZE * TS_SYNC_MIN_PACKETS {
+        return false;
+    }
+
+    let max_offset = TS_PACKET_SIZE.min(data.len().saturating_sub(TS_PACKET_SIZE));
+    for offset in 0..=max_offset {
+        if data[offset] != 0x47 {
+            continue;
+        }
+
+        let mut packets = 0usize;
+        let mut idx = offset;
+        while idx < data.len() {
+            if data[idx] != 0x47 {
+                break;
+            }
+
+            packets += 1;
+            if packets >= TS_SYNC_MIN_PACKETS {
+                return true;
+            }
+            idx += TS_PACKET_SIZE;
+        }
+    }
+
+    false
 }
 
 fn handle_device_params<'a>(
@@ -1046,5 +1179,72 @@ fn handle_device_params<'a>(
                 save_device_param(&dongle_id, key_str, &string);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_truncated_stream_error, looks_like_mpeg_ts, route_has_any_uploads,
+        segment_has_any_upload, TS_PACKET_SIZE, TS_SYNC_MIN_PACKETS,
+    };
+    use crate::models::_entities::segments;
+    use std::io;
+
+    #[test]
+    fn accepts_mpeg_ts_with_aligned_sync_bytes() {
+        let mut payload = vec![0u8; TS_PACKET_SIZE * TS_SYNC_MIN_PACKETS];
+        for packet_index in 0..TS_SYNC_MIN_PACKETS {
+            payload[packet_index * TS_PACKET_SIZE] = 0x47;
+        }
+
+        assert!(looks_like_mpeg_ts(&payload));
+    }
+
+    #[test]
+    fn accepts_mpeg_ts_with_initial_offset() {
+        let offset = 7;
+        let mut payload = vec![0u8; offset + (TS_PACKET_SIZE * TS_SYNC_MIN_PACKETS)];
+        for packet_index in 0..TS_SYNC_MIN_PACKETS {
+            payload[offset + (packet_index * TS_PACKET_SIZE)] = 0x47;
+        }
+
+        assert!(looks_like_mpeg_ts(&payload));
+    }
+
+    #[test]
+    fn rejects_non_mpeg_ts_payload() {
+        let payload = vec![0x00u8; TS_PACKET_SIZE * TS_SYNC_MIN_PACKETS];
+        assert!(!looks_like_mpeg_ts(&payload));
+    }
+
+    #[test]
+    fn rejects_too_short_payload() {
+        let payload = vec![0x47u8; TS_PACKET_SIZE * (TS_SYNC_MIN_PACKETS - 1)];
+        assert!(!looks_like_mpeg_ts(&payload));
+    }
+
+    #[test]
+    fn detects_truncated_stream_error_by_message() {
+        let err = io::Error::other("zstd stream did not finish");
+        assert!(is_truncated_stream_error(&err));
+    }
+
+    #[test]
+    fn detects_truncated_stream_error_by_kind() {
+        let err = io::Error::new(io::ErrorKind::UnexpectedEof, "boom");
+        assert!(is_truncated_stream_error(&err));
+    }
+
+    #[test]
+    fn route_upload_detection_checks_all_media_types() {
+        let empty_segment = segments::Model::default();
+        assert!(!segment_has_any_upload(&empty_segment));
+        assert!(!route_has_any_uploads(&[empty_segment.clone()]));
+
+        let mut qcam_segment = segments::Model::default();
+        qcam_segment.qcam_url = "http://example/qcamera.ts".to_string();
+        assert!(segment_has_any_upload(&qcam_segment));
+        assert!(route_has_any_uploads(&[empty_segment, qcam_segment]));
     }
 }

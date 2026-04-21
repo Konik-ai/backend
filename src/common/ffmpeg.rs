@@ -3,8 +3,9 @@ use std::{
     env,
     io,
     path::{Path as FsPath},
-    process::Command,
+    process::{Command, Stdio},
     sync::OnceLock,
+    time::Duration,
 };
 
 
@@ -136,4 +137,46 @@ pub fn remux_hevc_to_mp4(
         "ffmpeg encode failed for all encoders ({})",
         errors.join(" | ")
     )))
+}
+
+pub async fn probe_duration_seconds(
+    input_path: &FsPath,
+    timeout: Duration,
+) -> Result<f32, io::Error> {
+    let mut cmd = tokio::process::Command::new("ffprobe");
+    cmd.arg("-v")
+        .arg("error")
+        .arg("-show_entries")
+        .arg("format=duration")
+        .arg("-of")
+        .arg("default=noprint_wrappers=1:nokey=1")
+        .arg(input_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = tokio::time::timeout(timeout, cmd.output())
+        .await
+        .map_err(|_| io_other("ffprobe timed out"))?
+        .map_err(io_other)?;
+
+    if !output.status.success() {
+        return Err(io_other(format!(
+            "ffprobe failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let duration_raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let duration: f32 = duration_raw
+        .parse()
+        .map_err(|e| io_other(format!("ffprobe returned invalid duration `{duration_raw}`: {e}")))?;
+
+    if !duration.is_finite() || duration.is_sign_negative() {
+        return Err(io_other(format!(
+            "ffprobe returned non-finite duration `{duration}`"
+        )));
+    }
+
+    Ok(duration)
 }

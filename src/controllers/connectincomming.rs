@@ -16,6 +16,50 @@ use futures::StreamExt;
 use loco_rs::prelude::*;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UploadAuthError {
+    MissingDeviceAuth,
+    UploadsDisabled,
+    DongleMismatch,
+}
+
+fn validate_upload_auth(
+    device_model: Option<&crate::models::devices::DM>,
+    request_dongle_id: &str,
+) -> std::result::Result<(), UploadAuthError> {
+    let Some(device_model) = device_model else {
+        return Err(UploadAuthError::MissingDeviceAuth);
+    };
+
+    if !device_model.uploads_allowed {
+        return Err(UploadAuthError::UploadsDisabled);
+    }
+
+    if device_model.dongle_id != request_dongle_id {
+        return Err(UploadAuthError::DongleMismatch);
+    }
+
+    Ok(())
+}
+
+fn enforce_upload_auth(
+    auth: &crate::middleware::auth::MyJWT,
+    request_dongle_id: &str,
+) -> Result<()> {
+    match validate_upload_auth(auth.device_model.as_ref(), request_dongle_id) {
+        Ok(()) => Ok(()),
+        Err(UploadAuthError::MissingDeviceAuth) => {
+            loco_rs::controller::unauthorized("Only registered devices can upload")
+        }
+        Err(UploadAuthError::UploadsDisabled) => {
+            loco_rs::controller::unauthorized("Uploads ignored")
+        }
+        Err(UploadAuthError::DongleMismatch) => {
+            loco_rs::controller::bad_request("dongle_id does not match identity")
+        }
+    }
+}
+
 pub async fn upload_bootlogs(
     auth: crate::middleware::auth::MyJWT,
     Path((dongle_id, file)): Path<(String, String)>,
@@ -24,7 +68,7 @@ pub async fn upload_bootlogs(
     axum::Extension(upload_tracker): axum::Extension<std::sync::Arc<UploadTracker>>,
     body: axum::body::Body,
 ) -> Result<(StatusCode, &'static str)> {
-    //enforce_device_upload_permission!(auth);
+    enforce_upload_auth(&auth, &dongle_id)?;
     let file_key = format!("{}_boot_{}", dongle_id, file);
     let _upload_guard = ActiveUploadGuard::new(
         upload_tracker.clone(),
@@ -141,7 +185,7 @@ pub async fn upload_crash(
     axum::Extension(upload_tracker): axum::Extension<std::sync::Arc<UploadTracker>>,
     body: axum::body::Body,
 ) -> Result<(StatusCode, &'static str)> {
-    //enforce_device_upload_permission!(auth);
+    enforce_upload_auth(&auth, &dongle_id)?;
     let file_key = format!("{}_crash_{}_{}_{}", dongle_id, id, commit, name);
     let _upload_guard = ActiveUploadGuard::new(
         upload_tracker.clone(),
@@ -233,7 +277,7 @@ pub async fn upload_driving_logs(
     body: axum::body::Body,
 ) -> Result<(StatusCode, &'static str)> {
     let start = Instant::now();
-    //enforce_device_upload_permission!(auth);
+    enforce_upload_auth(&auth, &dongle_id)?;
     // Construct the URL to store the file
     let file_key = format!("{}_{}--{}--{}", dongle_id, timestamp, segment, file);
     let _upload_guard = ActiveUploadGuard::new(
@@ -367,4 +411,45 @@ pub fn routes() -> Routes {
         )
         .add("/:dongle_id/crash/:log_id/:commit/:name", put(upload_crash))
         .add("/:dongle_id/boot/:file", put(upload_bootlogs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_upload_auth, UploadAuthError};
+    use crate::models::devices::DM;
+
+    fn device_model(dongle_id: &str, uploads_allowed: bool) -> DM {
+        DM {
+            dongle_id: dongle_id.to_string(),
+            uploads_allowed,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn rejects_missing_device_auth() {
+        let result = validate_upload_auth(None, "abc123");
+        assert_eq!(result, Err(UploadAuthError::MissingDeviceAuth));
+    }
+
+    #[test]
+    fn rejects_uploads_when_device_is_blocked() {
+        let device = device_model("abc123", false);
+        let result = validate_upload_auth(Some(&device), "abc123");
+        assert_eq!(result, Err(UploadAuthError::UploadsDisabled));
+    }
+
+    #[test]
+    fn rejects_cross_device_uploads() {
+        let device = device_model("abc123", true);
+        let result = validate_upload_auth(Some(&device), "other_device");
+        assert_eq!(result, Err(UploadAuthError::DongleMismatch));
+    }
+
+    #[test]
+    fn allows_matching_device_uploads() {
+        let device = device_model("abc123", true);
+        let result = validate_upload_auth(Some(&device), "abc123");
+        assert_eq!(result, Ok(()));
+    }
 }

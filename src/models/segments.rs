@@ -51,7 +51,7 @@ impl SM {
     pub async fn add_segment_self(self, db: &DatabaseConnection) -> ModelResult<Self> {
         let active_model = self.clone().into_active_model();
         match active_model.insert(db).await {
-            Ok(_) => Ok(self),
+            Ok(inserted) => Ok(inserted),
             Err(e) => match e.sql_err() {
                 Some(SqlErr::UniqueConstraintViolation(_)) => Err(ModelError::EntityAlreadyExists),
                 _ => Err(e.into()),

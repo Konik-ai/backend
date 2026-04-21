@@ -54,7 +54,7 @@ impl RM {
     pub async fn add_route_self(self, db: &DatabaseConnection) -> ModelResult<Self> {
         let active_model = self.clone().into_active_model();
         match active_model.insert(db).await {
-            Ok(_) => Ok(self),
+            Ok(inserted) => Ok(inserted),
             Err(e) => match e.sql_err() {
                 Some(SqlErr::UniqueConstraintViolation(_)) => Err(ModelError::EntityAlreadyExists),
                 _ => Err(e.into()),
@@ -143,6 +143,7 @@ impl RM {
 
         let routes = Entity::find()
             .filter(Column::DeviceDongleId.eq(dongle_id))
+            .filter(Column::Maxqlog.ne(-1))
             .apply_if(from, |q, from_time| {
                 q.filter(Expr::cust(effective_time_sql).gte(from_time))
             })
