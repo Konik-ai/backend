@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::{header, HeaderMap},
     routing::patch,
     Extension,
 };
@@ -13,8 +14,10 @@ use sha2::Sha256;
 use std::{
     env,
     error::Error,
+    sync::OnceLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use url::Url;
 
 use super::v1_responses::*;
 use crate::{
@@ -50,6 +53,63 @@ fn upload_base_url() -> String {
         .expect("API_ENDPOINT env variable not set or is empty");
 
     base.trim_end_matches('/').to_string()
+}
+
+fn parse_endpoint_url(endpoint: &str) -> Option<Url> {
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty() {
+        return None;
+    }
+
+    Url::parse(endpoint)
+        .ok()
+        .or_else(|| Url::parse(&format!("https://{endpoint}")).ok())
+}
+
+fn rewrite_url_origin(url: &str, target: &Url) -> String {
+    let mut parsed = match Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return url.to_string(),
+    };
+
+    let _ = parsed.set_scheme(target.scheme());
+    let _ = parsed.set_host(target.host_str());
+    let _ = parsed.set_port(target.port());
+
+    parsed.to_string()
+}
+
+struct FrontendRewriteConfig {
+    frontend_endpoint: Option<String>,
+    frontend_api_origin: Option<Url>,
+}
+
+fn frontend_rewrite_config() -> &'static FrontendRewriteConfig {
+    static CONFIG: OnceLock<FrontendRewriteConfig> = OnceLock::new();
+    CONFIG.get_or_init(|| FrontendRewriteConfig {
+        frontend_endpoint: env_nonempty("FRONTEND_ENDPOINT"),
+        frontend_api_origin: env_nonempty("FRONTEND_API_ENDPOINT")
+            .and_then(|endpoint| parse_endpoint_url(&endpoint)),
+    })
+}
+
+fn should_rewrite_to_frontend(headers: &HeaderMap) -> bool {
+    let config = frontend_rewrite_config();
+    let referer = headers.get(header::REFERER).and_then(|value| value.to_str().ok());
+    match (referer, config.frontend_endpoint.as_deref()) {
+        (Some(referer), Some(frontend_endpoint)) => {
+            referer.starts_with(frontend_endpoint.trim_end_matches('/'))
+        }
+        _ => false,
+    }
+}
+
+fn frontend_api_origin_for_request(headers: &HeaderMap) -> Option<&'static Url> {
+    if should_rewrite_to_frontend(headers) {
+        frontend_rewrite_config().frontend_api_origin.as_ref()
+    } else {
+        None
+    }
 }
 
 #[derive(Deserialize)]
@@ -187,15 +247,22 @@ where
 async fn get_qcam_stream(
     auth: MyJWT,
     State(ctx): State<AppContext>,
+    headers: HeaderMap,
     Path(canonical_route_name): Path<String>,
 ) -> Result<Response> {
+    let frontend_api_origin = frontend_api_origin_for_request(&headers);
+
     get_camera_stream(
         auth,
         State(ctx),
         Path(canonical_route_name),
-        |seg| {
+        |seg: &mut SM| {
             if !seg.qcam_url.is_empty() {
-                Some((seg.qcam_url.clone(), seg.qcam_duration as f64))
+                let mut url = seg.qcam_url.clone();
+                if let Some(origin) = frontend_api_origin {
+                    url = rewrite_url_origin(&url, origin);
+                }
+                Some((url, seg.qcam_duration as f64))
             } else {
                 None
             }
@@ -775,6 +842,7 @@ async fn route_segment(
     auth: MyJWT,
     State(ctx): State<AppContext>,
     Path(dongle_id): Path<String>,
+    headers: HeaderMap,
     Query(params): Query<DeviceSegmentQuery>,
 ) -> Result<Response> {
     if let Some(user_model) = auth.user_model {
@@ -810,10 +878,14 @@ async fn route_segment(
     let token = jwt::JWT::new(&jwt_secret.secret)
         .generate_token(&exp, auth.claims.identity.to_string())
         .unwrap_or_default();
+    let frontend_api_origin = frontend_api_origin_for_request(&headers);
 
     for route in route_models.iter_mut() {
         route.share_sig = token.clone();
         route.share_exp = exp.to_string();
+        if let Some(origin) = frontend_api_origin {
+            route.url = rewrite_url_origin(&route.url, origin);
+        }
     }
 
     format::json(route_models)
